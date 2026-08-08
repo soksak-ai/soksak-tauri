@@ -31,6 +31,9 @@ pub fn socket_path() -> Option<&'static str> {
 struct PendingEntry {
     window: String,
     tx: mpsc::SyncSender<Value>,
+    /// 보낸 그 봉투. 창이 아직 리스너를 안 달아 못 받았으면 이것을 다시 보낸다 — 무엇을
+    /// 보냈는지 안 들고 있으면 재전송이 불가능하고, 그 배달은 상한까지 답 없이 남는다.
+    payload: Value,
 }
 
 #[derive(Default)]
@@ -40,16 +43,30 @@ pub struct CmdBridge {
 }
 
 impl CmdBridge {
-    fn insert(&self, seq: u64, window: &str, tx: mpsc::SyncSender<Value>) {
+    fn insert(&self, seq: u64, window: &str, tx: mpsc::SyncSender<Value>, payload: Value) {
         if let Ok(mut p) = self.pending.lock() {
             p.insert(
                 seq,
                 PendingEntry {
                     window: window.to_string(),
                     tx,
+                    payload,
                 },
             );
         }
+    }
+
+    /// 이 창으로 보냈는데 아직 답이 없는 배달들. 재전송할 대상이다.
+    fn pending_for(&self, window: &str) -> Vec<Value> {
+        self.pending
+            .lock()
+            .map(|p| {
+                p.values()
+                    .filter(|entry| entry.window == window)
+                    .map(|entry| entry.payload.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn take(&self, seq: u64) -> Option<mpsc::SyncSender<Value>> {
@@ -675,8 +692,10 @@ fn post_request(
 ) -> Option<(u64, mpsc::Receiver<Value>)> {
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = mpsc::sync_channel::<Value>(1);
-    bridge.insert(seq, target, tx);
-    if !oracle.emit_to(target, "cmd-request", payload(seq)) {
+    // 봉투를 만들어 두고 등록한다 — 창이 아직 리스너를 안 달았으면 이 봉투를 다시 보낸다.
+    let envelope = payload(seq);
+    bridge.insert(seq, target, tx, envelope.clone());
+    if !oracle.emit_to(target, "cmd-request", envelope) {
         bridge.remove(seq);
         return None;
     }
@@ -893,6 +912,38 @@ pub fn cmd_result(bridge: State<CmdBridge>, id: u64, result: Value) {
     if let Some(tx) = bridge.take(id) {
         let _ = tx.try_send(result);
     }
+}
+
+/// 창이 `cmd-request` 리스너를 달았다고 알린다 — 그 사이 온 배달을 다시 받는다.
+///
+/// `emit_to` 는 **창이 있으면** 성공한다. 창이 아직 리스너를 안 달았으면 그 사건은 아무도
+/// 받지 않고, 보낸 쪽은 답 상한(10s)까지 기다린다 — 실측 2026-08-08: 부팅 11.7 초 중 9.4 초가
+/// 첫 명령 한 건의 상한이었고, 두 번째 명령은 즉시 답했다.
+///
+/// **기다리지 않는다.** 창이 준비를 알릴 때까지 붙음을 늦추는 방식은 교착이다(준비를 알리려면
+/// 명령을 불러야 하는데 그 명령이 붙음을 기다린다 — 실측 19.8 초). 이 명령은 밀린 봉투를 다시
+/// 걸고 곧바로 돌아온다.
+///
+/// 같은 seq 를 두 번 받을 수 있다(리스너 설치와 이 호출 사이에 온 것). 프론트가 seq 로 한 번만
+/// 실행한다 — 중복 실행은 부수효과가 두 번 일어나므로 배달 쪽에서 막을 수 없는 사실이다.
+#[tauri::command]
+pub fn cmd_listener_ready(app: AppHandle, bridge: State<CmdBridge>, window: String) -> usize {
+    resend_pending(&app, &bridge, &window)
+}
+
+/// 이 창으로 보냈는데 아직 답이 없는 봉투를 다시 건다. 다시 건 건수를 돌린다.
+pub fn resend_pending(
+    oracle: &dyn crate::window_oracle::WindowOracle,
+    bridge: &CmdBridge,
+    window: &str,
+) -> usize {
+    let mut sent = 0;
+    for envelope in bridge.pending_for(window) {
+        if oracle.emit_to(window, "cmd-request", envelope) {
+            sent += 1;
+        }
+    }
+    sent
 }
 
 // 제어 소켓 경로(읽기 전용) — PTY 주입(pty.rs)과 같은 정본. 오케스트레이터가 스폰하는
@@ -1308,8 +1359,8 @@ mod tests {
         let bridge = CmdBridge::default();
         let (tx_a, rx_a) = mpsc::sync_channel::<Value>(1);
         let (tx_b, rx_b) = mpsc::sync_channel::<Value>(1);
-        bridge.insert(1, "w-a", tx_a);
-        bridge.insert(2, "w-b", tx_b);
+        bridge.insert(1, "w-a", tx_a, Value::Null);
+        bridge.insert(2, "w-b", tx_b, Value::Null);
         let n = bridge.cancel_window("w-a");
         assert_eq!(n, 1, "w-a 소유 pending 1건이 회수되어야 함");
         let got = rx_a
@@ -1519,6 +1570,67 @@ mod tests {
                 .unwrap()
                 .push((label.to_string(), event.to_string(), payload));
             true
+        }
+    }
+
+    // 규칙 — 창이 아직 못 받은 배달은 잃지 않는다.
+    //
+    // `emit_to` 는 **창이 있으면** 성공한다. 그 창이 아직 `cmd-request` 리스너를 안 달았으면
+    // 사건은 아무도 안 받고 조용히 사라지며, 보낸 쪽은 답 상한(`DEFAULT_REPLY_WAIT_MS`, 10s)
+    // 까지 기다린다 — 실측 2026-08-08: 앱을 켠 뒤 첫 명령이 정확히 한 번 TIMEOUT 이었고 두
+    // 번째는 즉시 답했다. 부팅 11.7 초 중 9.4 초가 그 한 건이었다.
+    //
+    // 붙음(attach)을 창 준비 뒤로 늦추는 방식은 쓰지 않는다 — 창이 준비를 알리려면 명령을
+    // 불러야 하는데 그 명령이 붙음을 기다린다(실측 19.8 초, 교착).
+    mod 밀린_배달은_잃지_않는다 {
+        use super::*;
+
+        #[test]
+        fn 리스너가_서기_전에_온_봉투를_다시_건다() {
+            let oracle = FakeWindows::live(&["main"]);
+            let bridge = CmdBridge::default();
+            let (seq, _rx) = post_request(&oracle, &bridge, "main", |seq| {
+                serde_json::json!({ "id": seq, "method": "state.tree" })
+            })
+            .expect("배달");
+            oracle.sent.lock().unwrap().clear(); // 창이 못 받은 상황 — 사건은 사라졌다
+
+            assert_eq!(resend_pending(&oracle, &bridge, "main"), 1);
+            let sent = oracle.sent.lock().unwrap();
+            assert_eq!(sent.len(), 1, "밀린 봉투 한 건이 다시 걸려야 한다");
+            assert_eq!(sent[0].1, "cmd-request");
+            assert_eq!(
+                sent[0].2["id"],
+                serde_json::json!(seq),
+                "다시 건 봉투는 같은 seq 여야 한다 — 새 번호를 발급하면 답이 옛 자리를 못 찾는다"
+            );
+        }
+
+        #[test]
+        fn 이미_답한_요청은_다시_걸지_않는다() {
+            let oracle = FakeWindows::live(&["main"]);
+            let bridge = CmdBridge::default();
+            let (seq, _rx) = post_request(&oracle, &bridge, "main", |seq| {
+                serde_json::json!({ "id": seq })
+            })
+            .expect("배달");
+            bridge.take(seq).expect("대기 자리");
+            oracle.sent.lock().unwrap().clear();
+
+            assert_eq!(resend_pending(&oracle, &bridge, "main"), 0);
+        }
+
+        // 다른 창의 배달까지 다시 걸면 그 창이 남의 명령을 실행한다.
+        #[test]
+        fn 남의_창_배달은_건드리지_않는다() {
+            let oracle = FakeWindows::live(&["main", "w-other"]);
+            let bridge = CmdBridge::default();
+            post_request(&oracle, &bridge, "w-other", |seq| serde_json::json!({ "id": seq }))
+                .expect("배달");
+            oracle.sent.lock().unwrap().clear();
+
+            assert_eq!(resend_pending(&oracle, &bridge, "main"), 0);
+            assert!(oracle.sent.lock().unwrap().is_empty());
         }
     }
 

@@ -99,8 +99,14 @@ export function startExecutor(): void {
   // 이 창에 emit_to 된 cmd-request 만 받는다(전역 listen 이면 emit_to(다른 창) 도 받아 명령이
   // 두 창에서 중복 실행 → 창별 독립 붕괴). lib/windowEvents 머리말 참조.
   executorStep("catalog-registered");
+  // 한 요청은 한 번만 실행한다 — 리스너 설치와 밀린 배달 회수 사이에 온 것은 두 경로로 올 수
+  // 있다. 배달 쪽은 무엇이 이미 실행됐는지 모르므로 여기가 유일한 판정 자리다(부수효과는
+  // 두 번 일어나면 되돌릴 수 없다).
+  const served = new Set<number>();
   listenThisWindow<CmdRequest>("cmd-request", async (e) => {
     const { id, method, params, pane, window, parent, origin } = e.payload;
+    if (served.has(id)) return;
+    served.add(id);
     // 호스트 미준비 = 플러그인 활성화 진행 중. 게이트는 **미등록 명령만** 세운다 — 이미
     // 등록된 코어 명령(state.tree 등)까지 잡으면 복원은 231ms 에 끝났는데 소켓 응답이
     // 플러그인 활성화(실측 2.5s) 뒤로 밀린다(복원 300ms 기준의 마지막 병목이 이 게이트였다).
@@ -124,4 +130,10 @@ export function startExecutor(): void {
     );
   });
   executorStep("listener-installed");
+  // 리스너가 서기 전에 온 배달을 회수한다. `emit_to` 는 창이 있으면 성공하므로 그 사건은
+  // 조용히 사라지고, 보낸 쪽은 답 상한(10s)까지 기다린다 — 실측 2026-08-08: 부팅 11.7 초 중
+  // 9.4 초가 첫 명령 한 건의 상한이었다. 답을 기다리지 않는다(회수는 곧바로 돌아온다).
+  void frameworkInvoke("cmd_listener_ready", { window: currentWindowLabel() })
+    .catch(() => {});
+  executorStep("pending-drained");
 }

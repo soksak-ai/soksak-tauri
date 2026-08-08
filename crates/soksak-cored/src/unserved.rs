@@ -17,6 +17,13 @@ pub struct Unserved {
 /// 옮기려다 막힌 것들. 여기 있는 이름이 표로 올라가려면 사유가 먼저 사라져야 한다.
 pub const UNSERVED: &[Unserved] = &[
     Unserved {
+        name: "cmd_listener_ready",
+        blocked_by: "창이 **자기 프로세스에게** 리스너를 달았다고 알리는 자리다. cored 는 창이 없고 \
+                     남의 창이 언제 리스너를 다는지 알 수 없다 — 밖에서 이 신호를 내면 아직 못 받는 \
+                     창에 봉투가 다시 걸리고, 그 배달도 똑같이 사라진다. 밀린 배달을 회수하는 것은 \
+                     리스너를 단 그 창의 일이다.",
+    },
+    Unserved {
         name: "app_quit",
         blocked_by: "자기 죽음은 자기만 끝낼 수 있다. cored 는 앱의 프로세스를 소유하지 않고, \
                      소유하지 않는 프로세스를 끄는 것은 종료가 아니라 살해다 — 앱은 자기가 \

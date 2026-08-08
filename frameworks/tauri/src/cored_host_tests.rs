@@ -588,7 +588,11 @@ mod 통보는_기다리지_않는다 {
         let at = source
             .find("pub fn control_owner_answered")
             .expect("control_owner_answered");
-        let body = &source[at..at + 600];
+        // 바이트 길이로 자르지 않는다 — 한글 주석 한 글자 안에서 끊기면 이 테스트가 대상과
+        // 무관한 이유로 죽는다(실측: `end byte index 44639 is not a char boundary`).
+        // 함수 끝(열 0 의 닫는 중괄호)까지 읽는다. `\n}\n` 은 ASCII 라 경계가 안전하다.
+        let rest = &source[at..];
+        let body = &rest[..rest.find("\n}\n").map(|i| i + 2).unwrap_or(rest.len())];
         assert!(
             body.contains("tell_owner("),
             "답이 필요 없는 통보는 tell 로 보낸다 — ask 는 상한까지 기다린다"

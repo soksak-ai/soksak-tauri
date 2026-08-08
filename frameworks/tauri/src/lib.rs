@@ -824,6 +824,7 @@ pub fn run() {
             #[cfg(unix)]
             cored_host::control_owner_answered,
             ipc::cmd_result,
+            ipc::cmd_listener_ready,
             ipc::ipc_socket_path,
             ipc::ipc_cli_dir,
             ipc::ipc_last_project_window,
