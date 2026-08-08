@@ -139,7 +139,8 @@ objc2-quartz-core = "0.3"
 block2 = "0.6"
 # WKWebView에 합성 휠을 직접 전달할 때 AppKit NSEvent가 소비하는 CGEvent를 만든다.
 # DOM scrollBy가 아니라 엔진 입력 경로를 검증해야 하므로 테스트 전용 우회가 아니다.
-core-graphics = { version = "0.25", features = ["highsierra"] }
+# elcapitan: CGEventPostToPid — 이 프로세스의 이벤트 큐로만 넣는 배달(커서·다른 앱 무영향).
+core-graphics = { version = "0.25", features = ["highsierra", "elcapitan"] }
 foreign-types = "0.5"
 # wry with_webview ObjC retain 누수 수정 — 상류 머지됨(tauri-apps/tauri PR #15224, 2026-07-09 dev).
 # 릴리스 판이 나올 때까지 머지 커밋 rev 를 고정해 상류로 빌드한다(떠다니는 dev 금지 — 재현성).

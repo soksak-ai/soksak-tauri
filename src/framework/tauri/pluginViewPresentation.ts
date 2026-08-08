@@ -284,6 +284,10 @@ export function projectPluginViewSlot(
 ): HTMLElement {
   const element = existing ?? document.createElement("div");
   element.dataset.node = `tauri/plugin-view/${frame.label}/surface`;
+  // **자기가 무엇인지 선언한다.** 자리 투영과 노드 투영은 이름 모양이 같은데 가운데 토막의
+  // 뜻이 다르다 — 여기는 콘텐츠 표면의 label 이고 저기는 renderer realm 이다. 읽는 쪽이
+  // 이름으로 추측하면 표면을 realm 으로 읽고 좌표 기준까지 틀린다(실측 2026-08-08).
+  element.dataset.surface = frame.label;
   if (composition) {
     declareCompositionParticipant(element, { kind: "slot", ...composition });
     let renderer = element.querySelector<HTMLElement>(
@@ -332,6 +336,8 @@ export function projectPluginViewNode(
   // 주소는 노드가 **사는** realm 을 가리킨다 — 콘텐츠 표면 이름으로 지으면 조작이 노드 없는
   // 문서로 간다.
   element.dataset.node = `tauri/plugin-view/${frame.realm}/${frame.node}`;
+  // 이 자리는 **그 realm 안의 노드**다(자리 투영과 구별되는 사실 — 위 dataset.surface 참조).
+  element.dataset.realm = frame.realm;
   // 포커스는 관측면의 사실이다 — 호스트에서 읽을 수 있어야 "안 들어간다" 를 값으로 말한다.
   element.dataset.focused = String(frame.focused);
   element.dataset.realmFocused = String(frame.realmFocused);
@@ -595,12 +601,15 @@ async function createPresentedView(
   // 요청한다(뜰 때가 아니라 눌릴 때다: 뜰 때 뺏으면 사용자가 치던 곳에서 커서가 튄다).
   // 호스트가 받은 사건을 **그대로** 내려보낸다 — 무엇이 일어났는지까지(누름·뗌·이동·버튼·
   // 클릭 수). 누름만 보내면 그 표면은 끌리지도 우클릭되지도 않는다.
+  // 버튼이 눌린 채의 이동은 **끌기**다 — 그냥 이동으로 넘기면 그 realm 이 받는 mousemove 의
+  // `buttons` 가 0 이라 끌기를 보는 코드가 아무 일도 안 한다.
   const KIND: Record<string, "down" | "up" | "move"> = {
     mousedown: "down", mouseup: "up", mousemove: "move",
   };
   const forwardPointer = (e: MouseEvent) => {
-    const kind = KIND[e.type];
-    if (kind === undefined) return;
+    const named = KIND[e.type];
+    if (named === undefined) return;
+    const kind = named === "move" && e.buttons !== 0 ? "drag" : named;
     const rect = input.container.getBoundingClientRect();
     // 계약의 축으로 보낸다 — 표면에 포인터를 넣는 자리는 이미 `sendInput` 이다. 여기서
     // 프레임워크 명령 이름을 부르면 그 축이 둘이 되고, 두 벌은 갈릴 때까지 조용하다.

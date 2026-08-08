@@ -170,6 +170,11 @@ export interface CommandSpec {
     | "ALREADY_EXISTS"
     // 노드는 노출돼 있는데 실제 rect가 화면 밖이다 — 캡처·측정할 픽셀이 없다.
     | "OFFSCREEN"
+    // 표면은 있는데 **이 프레임워크가 그것을 쥐고 있지 않다** — 사이드카 엔진이 그리는 표면은
+    // 그 플러그인이 소유하고, 코어의 입력 통로는 거기 닿지 않는다.
+    | "SURFACE_INPUT_UNAVAILABLE"
+    // 이 주소는 표면이 아니다 — 표면에만 있는 사실을 물었다.
+    | "NOT_A_SURFACE"
   )[];
   // CLI 사용 예시(매뉴얼용).
   examples?: readonly string[];

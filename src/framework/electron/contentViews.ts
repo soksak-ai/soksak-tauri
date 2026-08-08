@@ -334,12 +334,40 @@ export const domHost: ContentViewHost = {
     // 또 도는 스크립트를 본다.
     return () => el.removeEventListener("dom-ready", run);
   },
-  async sendInput(label, { x, y }) {
+  async sendInput(label, { x, y, kind, button, clickCount }) {
     // **태그는 전달하지 않는다**(계측 2026-08-02: 게스트에 arm 한 리스너가 아무것도 못 받았다).
     // 게스트의 webContents 에 직접 보내야 하고, 그 핸들은 프레임워크만 쥔다. 태그가 아는 것은
     // 자기 손잡이(id)뿐이라 그것을 넘긴다.
     const getId = await onReady<() => number>(label, "getWebContentsId");
-    await invoke("webview_send_input", { id: getId(), x: Math.round(x), y: Math.round(y) });
+    await invoke("webview_send_input", {
+      id: getId(), x: Math.round(x), y: Math.round(y), kind, button, clickCount,
+    });
+  },
+  async inputState(label, at) {
+    // 이쪽 표면은 문서 안의 태그다 — 배달을 가르는 사실도 문서의 사실이다: 그 자리가 지금
+    // 문서에 있고 얼마만큼 보이는가. 게스트 자신의 상태는 그 프로세스만 안다.
+    const el = find(label, document);
+    if (el === null) return { attached: false, why: `그 표면이 이 문서에 없습니다: ${label}` };
+    const rect = el.getBoundingClientRect();
+    const getId = await onReady<() => number>(label, "getWebContentsId");
+    const guest = await invoke<Record<string, unknown>>("webview_input_state", { id: getId() });
+    // 이쪽 표면은 문서 안에 살아서 그 자리를 가리는 것도 문서가 안다 — 같은 질문에 같은
+    // 이름으로 답한다(가려짐이 프레임워크마다 다른 이름이면 부른 쪽이 두 벌을 알아야 한다).
+    const point = at === undefined
+      ? {}
+      : (() => {
+          const top = el.ownerDocument.elementFromPoint(rect.left + at.x, rect.top + at.y);
+          return {
+            askedPoint: { x: at.x, y: at.y },
+            windowTopmostAtPoint: top === el || el.contains(top),
+          };
+        })();
+    return {
+      attached: true,
+      visibleRect: { x: 0, y: 0, w: Math.round(rect.width), h: Math.round(rect.height) },
+      ...point,
+      ...guest,
+    };
   },
   async wheel(label, x, y, dx, dy) {
     const getId = await onReady<() => number>(label, "getWebContentsId");

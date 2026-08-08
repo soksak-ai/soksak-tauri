@@ -269,6 +269,144 @@ unsafe fn place_event_in_window(
     Ok(ns_event)
 }
 
+/// 이 표면이 **지금 포인터를 받을 수 있는 상태인가** — AppKit 의 사실 그대로.
+///
+/// 입력이 안 닿을 때 "안 닿았다"만 알면 부른 쪽은 자기 좌표를 의심한다. 배달을 가르는 조건은
+/// 전부 이 표면과 그 창의 상태다: 창에 붙었는가, 창이 이동 사건을 받도록 켜져 있는가, 이
+/// 뷰가 입력 responder 인가, 그리고 **보이는 사각형**이 어디까지인가. 엔진은 마지막 것으로
+/// hover 를 자르므로(첫 responder 이면서 그 밖이면 조용히 버린다) 그 값이 없으면 이동이 왜
+/// 사라졌는지 영영 못 잰다.
+///
+/// 읽기만 한다 — 포커스도 자리도 건드리지 않는다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn webview_input_state(
+    app: AppHandle,
+    label: String,
+    x: Option<f64>,
+    y: Option<f64>,
+) -> Result<serde_json::Value, String> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let webview = registered_webview(&app, &label)
+        .ok_or_else(|| format!("webview 없음: {label}"))?;
+    let (tx, rx) = mpsc::sync_channel::<serde_json::Value>(1);
+    webview
+        .with_webview(move |platform| unsafe {
+            use objc2::msg_send;
+            use objc2::runtime::AnyObject;
+            use objc2_foundation::NSRect;
+
+            let wk = platform.inner() as *mut AnyObject;
+            if wk.is_null() {
+                let _ = tx.try_send(serde_json::json!({ "attached": false, "why": "WKWebView 핸들이 비어 있습니다" }));
+                return;
+            }
+            let bounds: NSRect = msg_send![&*wk, bounds];
+            let visible: NSRect = msg_send![&*wk, visibleRect];
+            let hidden: bool = msg_send![&*wk, isHiddenOrHasHiddenAncestor];
+            let flipped: bool = msg_send![&*wk, isFlipped];
+            let window: *mut AnyObject = msg_send![&*wk, window];
+            if window.is_null() {
+                let _ = tx.try_send(serde_json::json!({
+                    "attached": false,
+                    "hidden": hidden,
+                    "bounds": { "w": bounds.size.width, "h": bounds.size.height },
+                }));
+                return;
+            }
+            let window_number: isize = msg_send![&*window, windowNumber];
+            let key: bool = msg_send![&*window, isKeyWindow];
+            let accepts_moved: bool = msg_send![&*window, acceptsMouseMovedEvents];
+            let responder: *mut AnyObject = msg_send![&*window, firstResponder];
+            // **진짜 커서가 지금 어디 있는가.** 엔진이 hover 를 다룰 때 사건이 실은 좌표가
+            // 아니라 실제 커서 자리를 볼 수 있다 — 그렇다면 커서를 옮기지 않는 한 주입한
+            // 이동은 도착하지 않는다. 그 갈림을 여기서 값으로 답한다(커서는 건드리지 않는다).
+            let event_class = objc2::class!(NSEvent);
+            let cursor_screen: objc2_foundation::NSPoint = msg_send![event_class, mouseLocation];
+            let cursor_window: NSRect = msg_send![
+                &*window,
+                convertRectFromScreen: NSRect::new(cursor_screen, objc2_foundation::NSSize::new(0.0, 0.0))
+            ];
+            let asked = x.zip(y);
+            let cursor_local: objc2_foundation::NSPoint =
+                msg_send![&*wk, convertPoint: cursor_window.origin, fromView: std::ptr::null_mut::<AnyObject>()];
+            let bounds_rect: NSRect = msg_send![&*wk, bounds];
+            // 엔진은 hover 를 넘기기 전에 **그 자리의 맨 위 창이 우리 창인지** 본다("다른 창
+            // 위의 마우스 이동은 거절한다"). 아니면 조용히 버린다 — 보냈다는 답만 남는다.
+            //
+            // 묻는 자리는 좌표를 준 쪽이 정한다. 안 주면 지금 커서 자리다 — 사람이 손을 올린
+            // 자리가 그 표면의 hover 가 성립하는지 재는 기본 질문이기 때문이다.
+            let bounds_now: NSRect = msg_send![&*wk, bounds];
+            let point_screen = match asked {
+                Some((ax, ay)) => {
+                    let local = objc2_foundation::NSPoint::new(
+                        ax,
+                        if flipped { ay } else { bounds_now.size.height - ay },
+                    );
+                    let in_window: objc2_foundation::NSPoint =
+                        msg_send![&*wk, convertPoint: local, toView: std::ptr::null_mut::<AnyObject>()];
+                    let r: NSRect = msg_send![
+                        &*window,
+                        convertRectToScreen: NSRect::new(in_window, objc2_foundation::NSSize::new(0.0, 0.0))
+                    ];
+                    r.origin
+                }
+                None => cursor_screen,
+            };
+            let window_class = objc2::class!(NSWindow);
+            let top_at_point: isize = msg_send![
+                window_class,
+                windowNumberAtPoint: point_screen,
+                belowWindowWithWindowNumber: 0isize
+            ];
+            let cursor_over = cursor_local.x >= 0.0
+                && cursor_local.y >= 0.0
+                && cursor_local.x <= bounds_rect.size.width
+                && cursor_local.y <= bounds_rect.size.height;
+            let _ = tx.try_send(serde_json::json!({
+                "attached": true,
+                "hidden": hidden,
+                "flipped": flipped,
+                "windowNumber": window_number,
+                "windowIsKey": key,
+                "acceptsMouseMovedEvents": accepts_moved,
+                "isFirstResponder": std::ptr::eq(responder as *const AnyObject, wk as *const AnyObject),
+                "bounds": { "w": bounds.size.width, "h": bounds.size.height },
+                // 엔진이 hover 를 자르는 기준. 빈 사각형이면 이동은 전부 조용히 사라진다.
+                "visibleRect": {
+                    "x": visible.origin.x, "y": visible.origin.y,
+                    "w": visible.size.width, "h": visible.size.height,
+                },
+                "cursorOverSurface": cursor_over,
+                "askedPoint": asked.map(|(ax, ay)| serde_json::json!({ "x": ax, "y": ay })),
+                "topWindowAtPoint": top_at_point,
+                // 이 값이 거짓이면 이 창은 그 자리에서 맨 위가 아니고, 주입한 이동은 엔진이 버린다.
+                "windowTopmostAtPoint": top_at_point == window_number,
+                "cursorInSurface": { "x": cursor_local.x, "y": cursor_local.y },
+            }));
+        })
+        .map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| "입력 상태 응답 시간 초과".to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub async fn webview_input_state(
+    _app: AppHandle,
+    _label: String,
+    _x: Option<f64>,
+    _y: Option<f64>,
+) -> Result<serde_json::Value, String> {
+    Err("webview_input_state는 현재 macOS 구현이 필요합니다".into())
+}
+
 /// child WKWebView 에 **실제** 마우스 사건을 전달한다.
 ///
 /// 합성 DOM 사건이 아니다. 자식 표면은 메인 DOM 웹뷰 아래에 깔리므로 그 자리의 마우스는 위에
@@ -288,24 +426,62 @@ pub async fn webview_send_mouse(
     button: Option<String>,
     click_count: Option<u32>,
 ) -> Result<(), String> {
-    use core_graphics::event::{CGEvent, CGEventField, CGEventType, CGMouseButton};
-    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-    use core_graphics::geometry::CGPoint;
-    use foreign_types::ForeignType;
     use std::sync::mpsc;
     use std::time::Duration;
 
+    // AppKit 의 마우스 사건 종류 — 창에 붙여 **직접** 짓는다.
+    //
+    // CGEvent 를 NSEvent 로 바꿔 쓰면 그 사건은 어느 창의 것도 아니다(windowNumber 0). 누름·뗌은
+    // 그래도 들어가는데 **이동은 아무 데도 안 닿았다**(실측 2026-08-08: 페이지가 mousemove 를
+    // 0회 받았다) — 엔진이 hover 를 다룰 때 사건이 이 창의 것인지 보기 때문이다. 창 번호를 싣고
+    // 좌표를 창 기준으로 주면 지어내는 순간부터 제자리다.
+    const LEFT_DOWN: usize = 1;
+    const LEFT_UP: usize = 2;
+    const RIGHT_DOWN: usize = 3;
+    const RIGHT_UP: usize = 4;
+    const MOVED: usize = 5;
+    const LEFT_DRAGGED: usize = 6;
+    const RIGHT_DRAGGED: usize = 7;
+    const ENTERED: usize = 8;
+    const EXITED: usize = 9;
+
+    // **이 엔진에는 프로그램으로 hover 를 넣는 길이 없다.**
+    //
+    // 실측 2026-08-08 — 다섯 가지 배달을 전부 시험했고 페이지가 받은 mousemove 는 매번 0회였다:
+    // 뷰에 `mouseMoved:` 직접, 창에 `sendEvent:`, 창에 붙여 지은 NSEvent, `mouseEntered:` 짝,
+    // 그리고 이 프로세스 큐로 넣는 `CGEventPostToPid`. 조건도 전부 만족시켜 봤다(숨김 아님,
+    // 보이는 사각형 전체, 창이 key, 그 자리에서 맨 위, 이 뷰가 입력 responder). 같은 통로로
+    // 누름·뗌·끌기는 **전부 도착한다**.
+    //
+    // 엔진의 hover 는 실제 포인터 스트림에서만 갱신된다. 그것을 만들려면 진짜 커서를 옮겨야
+    // 하고, 그것은 사람의 포인터를 빼앗는 일이라 하지 않는다.
+    //
+    // 그래서 조용히 실패하지 않고 이름으로 거절한다. 누름이 hover 를 만든다는 사실까지 답에
+    // 싣는다 — 실측에서 클릭 한 번이 mouseover·mouseenter·pointerover 를 모두 냈다.
+    if matches!(kind.as_str(), "move" | "enter" | "exit") {
+        return Err(format!(
+            "이 엔진은 프로그램적 hover 를 페이지에 넣지 못합니다({kind}) — 실제 포인터 스트림에서만 갱신되고, 그것을 만들려면 사람의 커서를 빼앗아야 합니다. 누름(down)이 hover 를 만듭니다."
+        ));
+    }
     let right = button.as_deref() == Some("right");
     let event_type = match (kind.as_str(), right) {
-        ("down", false) => CGEventType::LeftMouseDown,
-        ("up", false) => CGEventType::LeftMouseUp,
-        ("down", true) => CGEventType::RightMouseDown,
-        ("up", true) => CGEventType::RightMouseUp,
-        ("move", _) => CGEventType::MouseMoved,
-        (other, _) => return Err(format!("모르는 마우스 사건: {other} (down|up|move)")),
+        ("down", false) => LEFT_DOWN,
+        ("up", false) => LEFT_UP,
+        ("down", true) => RIGHT_DOWN,
+        ("up", true) => RIGHT_UP,
+        ("move", _) => MOVED,
+        // 끌기는 이동이 아니다 — 버튼이 눌린 채 움직이면 OS 가 내는 사건이 따로 있고, 그것을
+        // 이동으로 보내면 페이지가 받는 mousemove 의 `buttons` 가 0 이라 끌기가 성립하지 않는다.
+        ("drag", false) => LEFT_DRAGGED,
+        ("drag", true) => RIGHT_DRAGGED,
+        // 진입·이탈은 이동과 다른 사실이다 — 사람의 포인터는 표면에 들어오고 나간다.
+        ("enter", _) => ENTERED,
+        ("exit", _) => EXITED,
+        (other, _) => return Err(format!("모르는 마우스 사건: {other} (down|up|move|drag|enter|exit)")),
     };
-    let cg_button = if right { CGMouseButton::Right } else { CGMouseButton::Left };
     // 더블클릭은 별개의 사건이 아니라 **같은 누름이 든 수**다 — 엔진이 이 수로 만든다.
+    // 이 값을 사건에 싣지 않으면 두 번 눌러도 엔진은 단발 둘로 읽는다(실측 2026-08-08:
+    // `detail` 이 네 번 다 1 이었다).
     let clicks = click_count.unwrap_or(1).max(1) as i64;
     let webview = registered_webview(&app, &label)
         .ok_or_else(|| format!("webview 없음: {label}"))?;
@@ -334,57 +510,79 @@ pub async fn webview_send_mouse(
             );
             let nil_view: *mut AnyObject = std::ptr::null_mut();
             let window_point: NSPoint = msg_send![&*wk, convertPoint: local, toView: nil_view];
-            let screen_point: NSPoint = msg_send![&*window, convertPointToScreen: window_point];
-            let screen_class = objc2::class!(NSScreen);
-            let main_screen: *mut AnyObject = msg_send![screen_class, mainScreen];
-            if main_screen.is_null() {
-                let _ = tx.try_send(Err("주 화면 좌표계를 찾지 못했습니다".to_string()));
+            let window_number: isize = msg_send![&*window, windowNumber];
+            let nil_ctx: *mut AnyObject = std::ptr::null_mut();
+            let event_class = objc2::class!(NSEvent);
+            // 누른 채인 사건은 압력이 있다 — 0 으로 보내면 엔진이 뗀 손으로 읽는다.
+            let pressure: f32 = if matches!(event_type, LEFT_DOWN | RIGHT_DOWN | LEFT_DRAGGED | RIGHT_DRAGGED) { 1.0 } else { 0.0 };
+            // **진입·이탈은 다른 생성자로만 지어진다.** 버튼/이동용 생성자에 그 종류를 주면
+            // AppKit 이 예외를 던지고 프로세스가 그 자리에서 죽는다(실측 2026-08-08: 창이
+            // 전부 사라지고 `window.list` 가 NO_HOST 를 답했다). 종류마다 지을 자리가 다르다.
+            let ns_event: *mut AnyObject = if matches!(event_type, ENTERED | EXITED) {
+                msg_send![
+                    event_class,
+                    enterExitEventWithType: event_type,
+                    location: window_point,
+                    modifierFlags: 0usize,
+                    timestamp: 0f64,
+                    windowNumber: window_number,
+                    context: nil_ctx,
+                    eventNumber: 0isize,
+                    trackingNumber: 0isize,
+                    userData: std::ptr::null_mut::<std::ffi::c_void>()
+                ]
+            } else {
+                msg_send![
+                    event_class,
+                    mouseEventWithType: event_type,
+                    location: window_point,
+                    modifierFlags: 0usize,
+                    timestamp: 0f64,
+                    windowNumber: window_number,
+                    context: nil_ctx,
+                    eventNumber: 0isize,
+                    clickCount: clicks as isize,
+                    pressure: pressure
+                ]
+            };
+            if ns_event.is_null() {
+                let _ = tx.try_send(Err("마우스 NSEvent 생성 실패".to_string()));
                 return;
             }
-            let main_frame: NSRect = msg_send![&*main_screen, frame];
-
-            let source = match CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
-                Ok(source) => source,
-                Err(()) => {
-                    let _ = tx.try_send(Err("CGEventSource 생성 실패".to_string()));
-                    return;
-                }
-            };
-            let location = (screen_point.x, main_frame.size.height - screen_point.y);
-            let event = match CGEvent::new_mouse_event(
-                source,
-                event_type,
-                CGPoint::new(location.0, location.1),
-                cg_button,
-            ) {
-                Ok(event) => event,
-                Err(()) => {
-                    let _ = tx.try_send(Err("mouse CGEvent 생성 실패".to_string()));
-                    return;
-                }
-            };
-            let ns_event = match place_event_in_window(&event, location, (window_point.x, window_point.y), "마우스") {
-                Ok(placed) => placed,
-                Err(why) => {
-                    let _ = tx.try_send(Err(why));
-                    return;
-                }
-            };
+            // 지어낸 자리가 그 창의 자리인지 사건 자신에게 되묻는다 — 좌표를 못 실은 사건은
+            // 보냈다고 답하면서 아무 데도 안 닿는다.
+            let carried: NSPoint = msg_send![&*ns_event, locationInWindow];
+            if !same_point((carried.x, carried.y), (window_point.x, window_point.y), WHEEL_POINT_TOLERANCE) {
+                let _ = tx.try_send(Err(format!(
+                    "마우스 사건이 창 좌표를 싣지 못했습니다: 창 ({:.1},{:.1}) 사건 ({:.1},{:.1})",
+                    window_point.x, window_point.y, carried.x, carried.y,
+                )));
+                return;
+            }
             // 이동 사건은 창이 받도록 켜져 있어야 도착한다 — 기본값은 꺼짐이고, 안 켜면
             // 보냈다고 답하면서 아무 데도 안 닿는다.
-            if matches!(event_type, CGEventType::MouseMoved) {
+            if matches!(event_type, MOVED | ENTERED | EXITED) {
                 let _: () = msg_send![&*window, setAcceptsMouseMovedEvents: true];
             }
             // 누름은 그 뷰를 입력 responder 로 만든다 — 사람이 누른 것과 같은 순서다.
-            if matches!(event_type, CGEventType::LeftMouseDown | CGEventType::RightMouseDown) {
+            if matches!(event_type, LEFT_DOWN | RIGHT_DOWN) {
                 let _: bool = msg_send![&*window, makeFirstResponder: &*wk];
             }
             let selector_sent: () = match event_type {
-                CGEventType::LeftMouseDown => msg_send![&*wk, mouseDown: &*ns_event],
-                CGEventType::LeftMouseUp => msg_send![&*wk, mouseUp: &*ns_event],
-                CGEventType::RightMouseDown => msg_send![&*wk, rightMouseDown: &*ns_event],
-                CGEventType::RightMouseUp => msg_send![&*wk, rightMouseUp: &*ns_event],
-                _ => msg_send![&*wk, mouseMoved: &*ns_event],
+                LEFT_DOWN => msg_send![&*wk, mouseDown: &*ns_event],
+                LEFT_UP => msg_send![&*wk, mouseUp: &*ns_event],
+                RIGHT_DOWN => msg_send![&*wk, rightMouseDown: &*ns_event],
+                RIGHT_UP => msg_send![&*wk, rightMouseUp: &*ns_event],
+                LEFT_DRAGGED => msg_send![&*wk, mouseDragged: &*ns_event],
+                RIGHT_DRAGGED => msg_send![&*wk, rightMouseDragged: &*ns_event],
+                ENTERED => msg_send![&*wk, mouseEntered: &*ns_event],
+                EXITED => msg_send![&*wk, mouseExited: &*ns_event],
+
+                // 위 목록이 kind 매칭과 짝이다 — 새 종류를 더하면 여기서도 자리를 준다.
+                _ => {
+                    let _ = tx.try_send(Err(format!("보낼 자리가 없는 마우스 사건: {kind}")));
+                    return;
+                }
             };
             let _ = selector_sent;
             let _ = tx.try_send(Ok(()));

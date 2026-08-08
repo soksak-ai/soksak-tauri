@@ -231,10 +231,42 @@ module.exports = {
       if (!guest) throw frameworkError("NO_CONTENT_VIEW", `그 콘텐츠 뷰가 없다: ${args.id}`);
       // 인자는 그대로 간다 — 기본값을 채우거나 반올림하면 그것이 규칙이 되고, 두 껍데기가
       // 같은 이름에 다른 좌표를 쓴다. 무엇이 유효한 좌표인가는 부르는 쪽이 정한다.
-      const at = { x: args.x, y: args.y, button: "left", clickCount: 1 };
-      guest.sendInputEvent({ type: "mouseDown", ...at });
-      guest.sendInputEvent({ type: "mouseUp", ...at });
+      //
+      // **한 호출은 한 사건이다.** 여기서 누름과 뗌을 붙여 내보내면 부르는 쪽이 더블클릭도
+      // 끌기도 만들 수 없다 — 계약이 무엇이 일어났는지를 나르는 이유가 그것이다.
+      const kind = String(args.kind ?? "down");
+      const type = {
+        down: "mouseDown", up: "mouseUp", move: "mouseMove", drag: "mouseMove",
+        enter: "mouseEnter", exit: "mouseLeave",
+      }[kind];
+      if (!type) throw frameworkError("INVALID_PARAMS", `모르는 마우스 사건: ${kind} (down|up|move|drag|enter|exit)`);
+      const button = args.button === "right" ? "right" : "left";
+      // 끌기의 `buttons` 는 수정자로 선다 — 안 세우면 끌기를 보는 코드에게는 그냥 이동이다.
+      const held = kind === "drag" ? [button === "right" ? "rightButtonDown" : "leftButtonDown"] : [];
+      guest.sendInputEvent({
+        type, x: args.x, y: args.y, button,
+        clickCount: Number(args.clickCount ?? 1),
+        ...(held.length > 0 ? { modifiers: held } : {}),
+      });
       return null;
+    },
+  },
+
+  // 이 표면이 지금 포인터를 받을 수 있는 상태인가 — 게스트 프로세스만 아는 사실.
+  webview_input_state: {
+    concept: "콘텐츠 뷰 입력 배달 조건",
+    source: "게스트 webContents",
+    answer: (ctx, args) => {
+      const guest = ctx.webContentsById(Number(args.id));
+      if (!guest) return { guestAlive: false };
+      return {
+        guestAlive: true,
+        crashed: guest.isCrashed(),
+        loading: guest.isLoading(),
+        focused: guest.isFocused(),
+        // 화면에 안 그려지는 표면은 입력을 받아도 사람이 볼 결과가 없다.
+        painting: guest.isPainting?.() ?? true,
+      };
     },
   },
 

@@ -668,6 +668,10 @@ export const nativeHost: ContentViewHost = {
       clickCount: input.clickCount,
     });
   },
+  inputState: (label, at) => call<Record<string, unknown>>("webview_input_state", {
+    label,
+    ...(at === undefined ? {} : { x: at.x, y: at.y }),
+  }),
   wheel: (label, x, y, dx, dy) => call("webview_send_wheel", {
     label,
     x: Math.round(x),

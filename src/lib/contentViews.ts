@@ -25,7 +25,11 @@ export interface SurfacePointerInput {
   /** 표면 자기 좌상단 기준 CSS px. */
   x: number;
   y: number;
-  kind: "down" | "up" | "move";
+  /** `drag` 는 버튼이 눌린 채 움직임이다 — `move` 로 보내면 페이지가 받는 mousemove 의
+   *  `buttons` 가 0 이라 끌기를 보는 코드가 아무 일도 안 한다.
+   *  `enter`/`exit` 는 표면에 **들어오고 나가는** 사실이다 — 이동과 다른 사건이고, 엔진은
+   *  hover 를 이 짝으로 시작하고 끝낸다. */
+  kind: "down" | "up" | "move" | "drag" | "enter" | "exit";
   button: "left" | "right";
   /** 1=단발, 2=더블 — 엔진이 이 수로 더블클릭을 만든다. */
   clickCount: number;
@@ -74,6 +78,19 @@ export interface ContentViewHost {
    * 못 하는 구현은 이름을 달고 거절한다. 조용히 성공하면 부른 쪽은 눌렀다고 믿는다.
    */
   sendInput(label: string, input: SurfacePointerInput): Promise<void>;
+  /**
+   * 이 표면이 **지금 포인터를 받을 수 있는 상태인가** — 그 프레임워크의 사실 그대로.
+   *
+   * 안 닿았다는 것만 알면 부른 쪽은 자기 좌표를 의심한다. 배달을 가르는 조건은 표면과 그
+   * 창의 상태이고, 그것을 물을 자리가 없으면 원인은 영영 추측이다(실측 2026-08-08: 누름은
+   * 도착하고 이동만 0회였는데 무엇이 자르는지 물어볼 데가 없었다).
+   *
+   * `at` 은 **그 자리**의 사실을 묻는다(표면 좌표 CSS px) — 배달 조건 중에는 자리마다 다른
+   * 것이 있다(그 지점의 맨 위 창이 누구인가). 안 주면 지금 커서 자리를 잰다.
+   *
+   * 답은 프레임워크마다 다른 키를 담아도 된다 — 무엇이 그 표면의 사실인지는 그쪽이 안다.
+   */
+  inputState(label: string, at?: { x: number; y: number }): Promise<Record<string, unknown>>;
   /** 콘텐츠 뷰 안으로 실제 휠 입력을 넣는다 — 뷰 좌표와 DOM WheelEvent 부호(+아래/+오른쪽). */
   wheel(label: string, x: number, y: number, dx: number, dy: number): Promise<void>;
   captureFull(label: string, path: string, width: number, height: number): Promise<{ path: string; bytes: number }>;

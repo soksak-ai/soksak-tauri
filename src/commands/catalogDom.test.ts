@@ -23,14 +23,18 @@ import { recordWindowFrames } from "./windowRecorder";
 
 // 모듈을 통째로 대체하면 **나중에 늘어난 수출이 조용히 undefined 가 된다** — 목은 그 모듈이
 // 실제로 주는 것을 따라가야 한다(실측 2026-08-02: browserLabel 을 안 넣어 핸들러가 죽었다).
-const sentInput: [string, number, number, string][] = [];
+// 사건은 **통째로** 적는다 — 손으로 고른 몇 칸만 적으면 계약에 축이 늘어난 날(버튼·든 수)
+// 검사는 그대로 GREEN 이고 빠진 축은 아무도 안 본다.
+const sentInput: [string, Record<string, unknown>][] = [];
 vi.mock("../lib/contentViews", () => ({
   CONTENT_VIEW_BODY: "data-content-view-body",
   contentViewSlotVisible: () => true,
-  hasContentViewHost: () => false,
+  // 있다고 답한다 — 아래에서 그 host 를 주기 때문이다. 없다면서 주면 그 세계는 성립하지 않고,
+  // 그 위에서 난 GREEN 은 아무것도 증명하지 않는다.
+  hasContentViewHost: () => true,
   contentViewHost: () => ({
-    sendInput: async (label: string, input: { x: number; y: number; kind: string }) => {
-      sentInput.push([label, input.x, input.y, input.kind]);
+    sendInput: async (label: string, input: Record<string, unknown>) => {
+      sentInput.push([label, input]);
     },
   }),
 }));
@@ -1449,25 +1453,27 @@ describe("ui.input.click — 콘텐츠 뷰를 가리키면 그 안으로 넣는�
     document.getElementById("cv")!.addEventListener("mousedown", () => (domClicks += 1));
     const r = (await execute("ui.input.click", { address }, {})) as {
       ok: boolean;
-      data?: { contentView?: string };
+      data?: { surface?: string };
     };
     expect(r.ok).toBe(true);
-    expect(r.data?.contentView).toBe("b-main-tab-probe");
+    expect(r.data?.surface).toBe("b-main-tab-probe");
     // 누름과 뗌이 짝이어야 클릭이 성립한다 — 누름만 보내면 그 표면은 눌리다 만다.
     expect(sentInput).toEqual([
-      ["b-main-tab-probe", 100, 50, "down"],
-      ["b-main-tab-probe", 100, 50, "up"],
+      ["b-main-tab-probe", { x: 0, y: 0, kind: "down", button: "left", clickCount: 1 }],
+      ["b-main-tab-probe", { x: 0, y: 0, kind: "up", button: "left", clickCount: 1 }],
     ]);
     expect(domClicks).toBe(0);
   });
 
-  it("오프셋은 뷰 좌표다 — 안 주면 왼쪽 위", async () => {
+  // 좌표는 **표면 자기 기준**이다. 뷰가 화면 어디에 놓였는지는 그 안의 페이지가 알 바 아니다 —
+  // 뷰포트 자리(100,50)를 기본값으로 쓰면 왼쪽 위를 부탁했는데 페이지 안 (100,50) 이 눌린다.
+  it("오프셋은 표면 좌표다 — 안 주면 왼쪽 위, 뷰가 화면 어디에 있든", async () => {
     plantContentView();
     const address = await probeAddress();
     await execute("ui.input.click", { address, x: 7, y: 9 }, {});
     expect(sentInput).toEqual([
-      ["b-main-tab-probe", 7, 9, "down"],
-      ["b-main-tab-probe", 7, 9, "up"],
+      ["b-main-tab-probe", { x: 7, y: 9, kind: "down", button: "left", clickCount: 1 }],
+      ["b-main-tab-probe", { x: 7, y: 9, kind: "up", button: "left", clickCount: 1 }],
     ]);
   });
 });

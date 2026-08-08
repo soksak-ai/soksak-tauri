@@ -802,6 +802,7 @@ pub fn run() {
             webview::webview_emit_native,
             webview::webview_send_wheel,
             webview::webview_send_mouse,
+            webview::webview_input_state,
             webview::webview_capture_full,
             webview::webview_type_text,
             webview::webview_zoom,

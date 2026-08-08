@@ -9,7 +9,7 @@
 import { moduleState } from "../lib/moduleState";
 import { currentWindow } from "../framework";
 import { browserLabel, currentWindowLabel } from "../lib/webviewLabels";
-import { contentViewHost, hasContentViewHost } from "../lib/contentViews";
+import { contentViewHost, hasContentViewHost, type SurfacePointerInput } from "../lib/contentViews";
 import { parseAddress, isParseError } from "./address";
 import { scanNodes, type ScannedNode } from "../plugins/nodeScan";
 import { register } from "./registry";
@@ -912,7 +912,7 @@ function projectedRealmRefusal(el: Element, addr: string) {
     code: "OTHER_REALM" as const,
     message:
       `이 노드는 다른 realm 의 투영입니다(plugin-view) — 호스트에 꽂은 사건은 그 안에 닿지 않습니다: ${addr}. ` +
-      "이 명령은 아직 그 realm 으로 가는 길이 없습니다(클릭·채우기는 넘어갑니다).",
+      "이 명령은 아직 그 realm 으로 가는 길이 없습니다(포인터 게스처·채우기는 넘어갑니다).",
   };
 }
 
@@ -922,6 +922,126 @@ function projectedTarget(el: Element): { realm: string; node: string } | null {
   const declared = (el as HTMLElement).dataset.node ?? "";
   const m = /^[^/]+\/plugin-view\/([^/]+)\/(.+)$/.exec(declared);
   return m ? { realm: m[1], node: m[2] } : null;
+}
+
+/** 포인터를 넣을 **표면**과 그 안에서 이 노드가 차지한 자리(표면-로컬 CSS px). */
+interface GestureSurface {
+  label: string;
+  x: number; y: number; w: number; h: number;
+  /** 이 노드가 표면 **전체**인가 — 콘텐츠 뷰가 그렇다. */
+  whole: boolean;
+}
+
+/**
+ * 이 노드에 넣는 포인터가 **어느 표면의 어느 자리**로 가는가.
+ *
+ * 두 가지가 같은 답을 낸다. 콘텐츠 뷰는 그 자체가 표면이고(그 안의 자리는 페이지가 정하므로
+ * 부르는 쪽이 좌표를 준다), 투영 노드는 다른 realm 의 사실을 비춘 자리다 — 투영은 그 realm
+ * 컨테이너의 직계 자식으로 컨테이너 좌상단 기준에 놓이므로(pluginViewPresentation), 컨테이너
+ * 와의 차가 곧 그 realm 안의 자리다. 사람이 누른 자리를 그 realm 으로 넘길 때 쓰는 좌표계와
+ * 같은 것이다.
+ */
+function gestureSurface(el: Element): GestureSurface | null {
+  const declared = el instanceof HTMLElement ? el.dataset : undefined;
+  // **자리 투영** — 이 노드가 곧 콘텐츠 표면이다. 표면 안의 왼쪽 위는 (0,0) 이지 이 자리가
+  // 화면 어디에 놓였는지가 아니다.
+  if (declared?.surface) {
+    const r = el.getBoundingClientRect();
+    return { label: declared.surface, x: 0, y: 0, w: r.width, h: r.height, whole: true };
+  }
+  // **노드 투영** — 다른 realm 안의 한 노드다. 투영은 그 realm 컨테이너의 직계 자식으로
+  // 컨테이너 좌상단 기준에 놓이므로, 컨테이너와의 차가 그 realm 안의 자리다.
+  if (declared?.realm) {
+    const box = el.parentElement;
+    if (box === null) return null;
+    const r = el.getBoundingClientRect();
+    const c = box.getBoundingClientRect();
+    return {
+      label: declared.realm,
+      x: r.left - c.left, y: r.top - c.top, w: r.width, h: r.height,
+      whole: false,
+    };
+  }
+  // **콘텐츠 뷰는 그 탭 노드의 자손이 아니다** — 칸 밖 표면에 놓인다(실측 2026-08-02:
+  // `[data-pane]` 조상도 없었다). 그래서 자손을 뒤지면 못 찾고 조용히 DOM 클릭이 된다.
+  // 소속은 라벨이 안다: `b-<창>-<뷰>`. 주소가 가리키는 탭의 뷰 id 로 라벨을 지어 찾는다.
+  const viewId = el.getAttribute("data-node")?.match(/^layout\/tab\/(.+)$/)?.[1];
+  // 선택자에 값을 끼워 넣지 않는다 — 이스케이프가 환경마다 있고 없고, 라벨에 특수문자가
+  // 들어오는 날 선택자가 조용히 다른 것을 고른다. 속성을 읽어 비교한다.
+  const wanted = viewId ? browserLabel(viewId) : null;
+  const byLabel = wanted
+    ? Array.from(document.querySelectorAll<HTMLElement>("[data-content-view]")).find(
+        (n) => n.getAttribute("data-content-view") === wanted,
+      ) ?? null
+    : null;
+  const view = el.matches("[data-content-view]")
+    ? el
+    : (el.querySelector<HTMLElement>("[data-content-view]") ?? byLabel);
+  if (view === null) return null;
+  const r = view.getBoundingClientRect();
+  return {
+    label: view.getAttribute("data-content-view") ?? "",
+    x: 0, y: 0, w: r.width, h: r.height,
+    whole: true,
+  };
+}
+
+/**
+ * 이 표면 안에서 게스처가 시작할 자리.
+ *
+ * 노드가 표면 전체면 좌상단이다 — 가운데를 기본으로 하면 무엇이 눌릴지 **그 페이지**가 정하고,
+ * 검사가 페이지 내용에 매달린다. 표면 안의 한 노드면 그 노드의 가운데다.
+ */
+function gesturePoint(surface: GestureSurface, p: Record<string, unknown>): { x: number; y: number } {
+  const x = typeof p.x === "number" ? p.x : surface.whole ? 0 : Math.round(surface.x + surface.w / 2);
+  const y = typeof p.y === "number" ? p.y : surface.whole ? 0 : Math.round(surface.y + surface.h / 2);
+  return { x, y };
+}
+
+function noGesturePath(addr: string) {
+  return {
+    ok: false as const,
+    code: "OTHER_REALM" as const,
+    message: `이 노드는 다른 표면에 살고, 그리로 포인터를 넣는 길이 이 프레임워크엔 없습니다: ${addr}`,
+  };
+}
+
+/**
+ * 게스처의 **모든 단계를 한 호출 안에서** 넣는다.
+ *
+ * 단계를 부르는 쪽이 이어 붙이게 두면 그 간격을 호출자가 정한다 — CLI 왕복은 더블클릭 간격을
+ * 넘겨서, 두 번 누름이 별개의 단발 클릭 둘이 된다(실측 2026-08-08). 한 게스처는 한 호출이다.
+ */
+async function playGesture(
+  label: string,
+  steps: readonly SurfacePointerInput[],
+): Promise<{ ok: false; code: "SURFACE_INPUT_UNAVAILABLE"; message: string } | null> {
+  const host = contentViewHost();
+  try {
+    for (const step of steps) await host.sendInput(label, step);
+    return null;
+  } catch (error) {
+    // 표면이 **있다**는 것과 이 프레임워크가 그것을 **쥐고 있다**는 것은 다른 사실이다.
+    // 사이드카 엔진이 그리는 표면은 그 플러그인이 소유하고, 여기 통로는 거기 닿지 않는다.
+    // 예외로 새면 응답은 "예기치 못하게 실패" 뿐이고, 부른 쪽은 자기 주소를 의심한다.
+    return {
+      ok: false as const,
+      code: "SURFACE_INPUT_UNAVAILABLE" as const,
+      message: `이 표면으로 포인터를 넣지 못했습니다(${label}): ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/** 누름 한 벌 — 사람이 누른 것과 같은 짝. 누름만 보내면 클릭이 성립하지 않는다. */
+function press(
+  at: { x: number; y: number },
+  button: "left" | "right",
+  clickCount: number,
+): SurfacePointerInput[] {
+  return [
+    { ...at, kind: "down", button, clickCount },
+    { ...at, kind: "up", button, clickCount },
+  ];
 }
 
 /**
@@ -934,26 +1054,13 @@ function projectedTarget(el: Element): { realm: string; node: string } | null {
 async function inProjectedRealm(
   el: Element,
   addr: string,
-  action: { kind: "click" } | { kind: "fill"; value: string },
+  action: { kind: "fill"; value: string },
 ) {
   const target = projectedTarget(el);
   if (target === null) return null;
-  if (!hasContentViewHost()) {
-    return {
-      ok: false as const,
-      code: "OTHER_REALM" as const,
-      message: `이 노드는 다른 realm 의 투영인데 그리로 가는 길이 이 프레임워크엔 없습니다: ${addr}`,
-    };
-  }
+  if (!hasContentViewHost()) return noGesturePath(addr);
   const host = contentViewHost();
   const pick = `document.querySelector(${JSON.stringify(`[data-node="${target.node}"]`)})`;
-  if (action.kind === "click") {
-    const done = await host.evalJs(target.realm, `const el = ${pick}; if (!el) return "none"; el.focus(); el.click(); return "ok";`);
-    if (!String(done).includes("ok")) {
-      return { ok: false as const, code: "NOT_EXPOSED" as const, message: `그 realm 에 노드가 없습니다: ${addr}` };
-    }
-    return { clicked: true, realm: target.realm, address: addr };
-  }
   // 값을 대입하지 않는다 — 그 realm 의 코드는 자기 입력 사건으로만 상태를 갱신한다. 포커스하고
   // 기존 값을 고른 뒤 네이티브 입력으로 넣으면 사람이 친 것과 같은 경로가 된다.
   const ready = await host.evalJs(target.realm, `const el = ${pick}; if (!el) return "none"; el.focus(); if (el.select) el.select(); return "ok";`);
@@ -966,7 +1073,7 @@ async function inProjectedRealm(
 
   register("ui.input.click", {
     description:
-      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. atUnixMs is the epoch the stimulus actually left, on the same presentation clock as layout.transactions and native display ledgers — join causality with it instead of inferring the click time from frames. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up. recordDir starts finite framework-neutral visual evidence before the click without focusing the window; recording.status reports its independent outcome, and capture/storage failure never cancels the click transaction. Unexposed addresses return NOT_EXPOSED — no guessing.",
+      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Nodes that live on another surface - a content view, or a projected plugin-view node - receive a real engine pointer inside that surface instead, and the answer names it as surface; button:'right' drives context menus there. Use to drive UI flows programmatically or in tests. atUnixMs is the epoch the stimulus actually left, on the same presentation clock as layout.transactions and native display ledgers — join causality with it instead of inferring the click time from frames. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up. recordDir starts finite framework-neutral visual evidence before the click without focusing the window; recording.status reports its independent outcome, and capture/storage failure never cancels the click transaction. Unexposed addresses return NOT_EXPOSED — no guessing.",
     triggers: { ko: "클릭 주입 ui클릭 버튼클릭 E2E 게스처 다운 업 분해" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
@@ -983,6 +1090,12 @@ async function inProjectedRealm(
         required: false,
       },
       y: { type: "number", description: "Content-view-relative y (CSS px).", required: false },
+      button: {
+        type: "string",
+        description: "left (default) or right. right drives context-menu paths on native surfaces.",
+        enum: ["left", "right"],
+        required: false,
+      },
       recordDir: {
         type: "string",
         description: "Optional output directory for finite transition frames captured concurrently with this click.",
@@ -1021,21 +1134,15 @@ async function inProjectedRealm(
         required: false,
       },
     },
-    returns: "{ clicked, address, atUnixMs, clock, phase?, contentView?, recording:{status:'not-requested'|'complete'|'failed',mode:'realtime',dir?,requestedFrames?,frames?,reason?}, trace?:{frames,samples} }",
+    returns: "{ clicked, address, atUnixMs, clock, phase?, surface?, recording:{status:'not-requested'|'complete'|'failed',mode:'realtime',dir?,requestedFrames?,frames?,reason?}, trace?:{frames,samples} }",
     message: () => tmsg("msg.ui.input.click"),
-    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS", "OTHER_REALM", "SURFACE_INPUT_UNAVAILABLE"],
     danger: "inject",
     examples: ['ui.input.click \'{"address":"win/main/chrome/modal/consent/agree"}\''],
     handler: async (p) => {
       const addr = p.address as string;
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
-      // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
-      if (projectedRealmNode(found.el)) {
-        // 투영일 때만 기다린다 — 평범한 호스트 노드까지 await 를 태우면 그 뒤 순서가 바뀐다.
-        const routed = await inProjectedRealm(found.el, addr, { kind: "click" });
-        if (routed) return routed;
-      }
       const el = found.el;
       // 실제 클릭과 등가 시퀀스 — el.click()(click 단발)은 mousedown 기반 요소(사이드바 탭
       // 드래그-선택 등)를 못 누른다. dblclick 커맨드와 동일 패턴의 1라운드.
@@ -1132,50 +1239,32 @@ async function inProjectedRealm(
             : { trace: { frames: traceSamples.length, samples: traceSamples } }),
         };
       };
-      // **콘텐츠 뷰를 가리키면 그 안으로 넣는다.**
+      // **다른 표면에 사는 노드는 그 표면 안으로 진짜 포인터를 넣는다.**
       //
-      // 그 안은 다른 프로세스라 DOM 으로 만든 클릭이 닿지 않고, 닿아도 사용자 활성화가 없어
-      // 엔진이 창-열기 같은 것을 막는다(실측 2026-08-02: `_blank` 링크를 스크립트로 눌러도
-      // 창-열기 요청이 0회였다). 태그가 게스트에 미는 입력은 엔진이 내는 진짜 입력이다.
-      //
-      // 좌표는 **뷰 좌표**다(CSS px). 안 주면 왼쪽 위 — 가운데를 기본으로 하면 무엇이 눌릴지
-      // 그 페이지가 정하고, 검사가 페이지 내용에 매달린다.
-      // **콘텐츠 뷰는 그 탭 노드의 자손이 아니다** — 칸 밖 표면에 놓인다(실측 2026-08-02:
-      // `[data-pane]` 조상도 없었다). 그래서 자손을 뒤지면 못 찾고 조용히 DOM 클릭이 된다.
-      // 소속은 라벨이 안다: `b-<창>-<뷰>`. 주소가 가리키는 탭의 뷰 id 로 라벨을 지어 찾는다.
-      const viewId = el.getAttribute("data-node")?.match(/^layout\/tab\/(.+)$/)?.[1];
-      // 선택자에 값을 끼워 넣지 않는다 — 이스케이프가 환경마다 있고 없고, 라벨에 특수문자가
-      // 들어오는 날 선택자가 조용히 다른 것을 고른다. 속성을 읽어 비교한다.
-      const wanted = viewId ? browserLabel(viewId) : null;
-      const byLabel = wanted
-        ? Array.from(document.querySelectorAll<HTMLElement>("[data-content-view]")).find(
-            (n) => n.getAttribute("data-content-view") === wanted,
-          ) ?? null
-        : null;
-      const view = el.matches("[data-content-view]")
-        ? el
-        : (el.querySelector<HTMLElement>("[data-content-view]") ?? byLabel);
-      if (view) {
-        const cvLabel = view.getAttribute("data-content-view") ?? "";
-        const r0 = view.getBoundingClientRect();
-        const at = {
-          x: typeof p.x === "number" ? p.x : Math.round(r0.left),
-          y: typeof p.y === "number" ? p.y : Math.round(r0.top),
-        };
+      // 콘텐츠 뷰든 투영 노드든 진짜 노드는 이 문서에 없다. DOM 으로 만든 클릭은 닿지 않고,
+      // 닿아도 사용자 활성화가 없어 엔진이 창-열기 같은 것을 막는다(실측 2026-08-02: `_blank`
+      // 링크를 스크립트로 눌러도 창-열기 요청이 0회였다). 엔진이 내는 진짜 입력이라야 한다.
+      const surface = gestureSurface(el);
+      if (surface) {
+        if (!hasContentViewHost()) return noGesturePath(addr);
+        const at = gesturePoint(surface, p);
         // 호스트 계약을 지난다 — 태그를 직접 만지면 그 구현이 바뀌는 날 이 자리만 조용히 죽는다.
         // 못 하는 구현은 그 자리에서 이름을 달고 거절한다(조용한 성공 금지).
         if (causeTraceId !== undefined) declareLayoutCause(causeTraceId);
         const atUnixMs = presentationNowUnixMs();
-        // 사람이 누른 것과 같은 짝 — 누름만 보내면 클릭이 성립하지 않는다.
-        const press = { x: at.x, y: at.y, button: "left" as const, clickCount: 1 };
-        await contentViewHost().sendInput(cvLabel, { ...press, kind: "down" });
-        await contentViewHost().sendInput(cvLabel, { ...press, kind: "up" });
+        const pair = press(at, p.button === "right" ? "right" : "left", 1);
+        const refused = await playGesture(
+          surface.label,
+          phase === "down" ? [pair[0]] : phase === "up" ? [pair[1]] : pair,
+        );
+        if (refused) return refused;
         return {
           clicked: true,
           address: addr,
           atUnixMs,
           clock: PRESENTATION_CLOCK,
-          contentView: cvLabel,
+          surface: surface.label,
+          ...(phase ? { phase } : {}),
           ...(await observationResult()),
         };
       }
@@ -1205,6 +1294,49 @@ async function inProjectedRealm(
           clicked: true, address: addr, atUnixMs, clock: PRESENTATION_CLOCK,
           ...(await observationResult()),
         };
+    },
+  });
+
+  // 포인터가 표면에 도착하지 않을 때, 그 사실만으로는 아무것도 못 고친다. 배달을 가르는
+  // 조건은 전부 그 표면과 창의 상태다 — 물을 자리가 없으면 원인은 영영 추측이다.
+  register("ui.input.state", {
+    description:
+      "Ask a surface whether it can receive pointer input right now, and why not. Answers with the framework's own facts about delivery: whether the surface is attached to a window, whether that window accepts moved events, whether this view is the input responder, and the visibleRect the engine clips hover against. Use this the moment ui.input.click/pointer/drag reports success but nothing reaches the page — the answer names the condition instead of leaving you to guess coordinates. Read-only: it never focuses, moves, or activates anything. Addresses that are not a surface return NOT_A_SURFACE.",
+    triggers: { ko: "표면 입력 상태 왜 안닿음 배달조건 responder 보이는사각형 진단" },
+    params: {
+      address: { type: "string", description: "Exposed surface address from ui.tree (a content view or a projected plugin-view surface)", required: true },
+      x: { type: "number", description: "Surface-relative x (CSS px) to ask about. Some delivery conditions differ per point — notably which window is topmost there. Omit to ask about the cursor's current position.", required: false },
+      y: { type: "number", description: "Surface-relative y (CSS px).", required: false },
+    },
+    returns: "{ address, surface, state:{ attached, hidden?, windowIsKey?, acceptsMouseMovedEvents?, isFirstResponder?, bounds?, visibleRect?, askedPoint?, topWindowAtPoint?, windowTopmostAtPoint? } }",
+    message: () => tmsg("msg.ui.input.state"),
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "NOT_A_SURFACE", "SURFACE_INPUT_UNAVAILABLE"],
+    examples: ['ui.input.state \'{"address":"win/main/content/view/x/tab/t1/node/tauri/plugin-view/b-main-t1/surface"}\''],
+    handler: async (p) => {
+      const addr = p.address as string;
+      const found = resolveExposed(addr);
+      if (!("el" in found)) return found;
+      const surface = gestureSurface(found.el);
+      if (surface === null) {
+        return {
+          ok: false as const,
+          code: "NOT_A_SURFACE" as const,
+          message: `이 노드는 표면이 아닙니다 — 물을 배달 조건이 없습니다: ${addr}`,
+        };
+      }
+      if (!hasContentViewHost()) return noGesturePath(addr);
+      try {
+        const at = typeof p.x === "number" && typeof p.y === "number"
+          ? { x: p.x as number, y: p.y as number }
+          : undefined;
+        return { address: addr, surface: surface.label, state: await contentViewHost().inputState(surface.label, at) };
+      } catch (error) {
+        return {
+          ok: false as const,
+          code: "SURFACE_INPUT_UNAVAILABLE" as const,
+          message: `이 표면의 상태를 읽지 못했습니다(${surface.label}): ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
     },
   });
 
@@ -1272,20 +1404,22 @@ async function inProjectedRealm(
   // 별개 동사가 아니라 같은 동사의 부재다 — 하나의 명령이 둘 다 낸다(짝이 갈라지지 않는다).
   register("ui.input.pointer", {
     description:
-      "Drive the pointer the way the OS does: enter/move onto an exposed node, or leave (no address = the pointer is not over us). Hover state that a native child surface can steal — gutter highlight — is owned by app state, not CSS :hover, precisely so it can be driven and read back here. Returns the gutter-hover key now held, so a test can assert both the arming and the release.",
+      "Drive the pointer the way the OS does: enter/move onto an exposed node, or leave (no address = the pointer is not over us). Hover state that a native child surface can steal — gutter highlight — is owned by app state, not CSS :hover, precisely so it can be driven and read back here. Returns the gutter-hover key now held, so a test can assert both the arming and the release. Addresses that resolve to a native surface may be refused with SURFACE_INPUT_UNAVAILABLE: some engines only update hover from the real pointer stream, and moving the real cursor would take it away from the person using the machine. Where that is so, a press is what creates hover — ui.input.click delivers mouseover/mouseenter/pointerover along with it.",
     triggers: { ko: "포인터 이동 hover 강조 진입 이탈 마우스 주입 E2E" },
     params: {
       address: { type: "string", description: "Exposed node to move onto. Omit to signal the pointer left us." },
+      x: { type: "number", description: "Surface-relative x (CSS px) when the address is a content view.", required: false },
+      y: { type: "number", description: "Surface-relative y (CSS px).", required: false },
     },
-    returns: "{ address, gutterHover }",
+    returns: "{ address, surface?, gutterHover }",
     message: () => tmsg("msg.ui.input.pointer"),
-    errors: ["NOT_EXPOSED", "AMBIGUOUS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "OTHER_REALM", "SURFACE_INPUT_UNAVAILABLE"],
     danger: "inject",
     examples: [
       'ui.input.pointer \'{"address":"win/main/chrome/gutter/pan-g2h3j4/right"}\'',
       "ui.input.pointer   # 이탈(강조 해제)",
     ],
-    handler: (p) => {
+    handler: async (p) => {
       const addr = typeof p.address === "string" ? p.address : null;
       if (addr == null) {
         useGutterHover.getState().set(null);
@@ -1293,9 +1427,22 @@ async function inProjectedRealm(
       }
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
-      // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
-      { const other = projectedRealmRefusal(found.el, addr); if (other) return other; }
       const el = found.el;
+      // 다른 표면 위의 자리로 가는 이동은 그 표면 안으로 넣는다 — 호스트에 꽂은 이동은 그 안의
+      // hover 를 만들지 못한다.
+      const surface = gestureSurface(el);
+      if (surface) {
+        if (!hasContentViewHost()) return noGesturePath(addr);
+        const at = gesturePoint(surface, p);
+        // 사람의 포인터는 **들어온 다음** 움직인다 — 엔진은 그 짝으로 hover 를 시작한다.
+        // 이동만 보내면 아직 들어온 적 없는 표면에서 움직이는 셈이라 자리를 못 잡는다.
+        const refused = await playGesture(surface.label, [
+          { ...at, kind: "enter", button: "left", clickCount: 1 },
+          { ...at, kind: "move", button: "left", clickCount: 1 },
+        ]);
+        if (refused) return refused;
+        return { address: addr, surface: surface.label, gutterHover: useGutterHover.getState().key };
+      }
       const key = el instanceof HTMLElement ? (el.dataset.gutterKey ?? null) : null;
       if (key != null) useGutterHover.getState().set(key);
       el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false, composed: true }));
@@ -1849,19 +1996,31 @@ async function inProjectedRealm(
     triggers: { ko: "더블클릭 두번클릭 이름변경 rename 주입 E2E" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
+      x: { type: "number", description: "Surface-relative x (CSS px) when the address is a content view.", required: false },
+      y: { type: "number", description: "Surface-relative y (CSS px).", required: false },
+      button: { type: "string", description: "left (default) or right.", enum: ["left", "right"], required: false },
     },
-    returns: "{ dblclicked, address }",
+    returns: "{ dblclicked, address, surface? }",
     message: () => tmsg("msg.ui.input.dblclick"),
-    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS", "OTHER_REALM", "SURFACE_INPUT_UNAVAILABLE"],
     danger: "inject",
     examples: ['ui.input.dblclick \'{"address":"win/main/chrome/tab/left/a.x"}\''],
-    handler: (p) => {
+    handler: async (p) => {
       const addr = p.address as string;
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
-      // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
-      { const other = projectedRealmRefusal(found.el, addr); if (other) return other; }
       const el = found.el;
+      // 다른 표면에 사는 노드는 그 표면 안에서 두 번 눌린다 — 두 번째 누름이 **든 수 2** 라야
+      // 엔진이 더블클릭으로 읽는다. 이 네 사건은 한 호출 안에서 잇달아 나간다.
+      const surface = gestureSurface(el);
+      if (surface) {
+        if (!hasContentViewHost()) return noGesturePath(addr);
+        const at = gesturePoint(surface, p);
+        const button = p.button === "right" ? "right" as const : "left" as const;
+        const refused = await playGesture(surface.label, [...press(at, button, 1), ...press(at, button, 2)]);
+        if (refused) return refused;
+        return { dblclicked: true, address: addr, surface: surface.label };
+      }
       const r = el.getBoundingClientRect();
       const x = r.left + r.width / 2;
       const y = r.top + r.height / 2;
@@ -1941,6 +2100,9 @@ async function inProjectedRealm(
         description: "center | left | right | top | bottom — point within the target rect (mode 1)",
         enum: ["center", "left", "right", "top", "bottom"],
       },
+      x: { type: "number", description: "Surface-relative start x (CSS px) when `from` is a content view. Defaults to its top-left.", required: false },
+      y: { type: "number", description: "Surface-relative start y (CSS px).", required: false },
+      button: { type: "string", description: "left (default) or right.", enum: ["left", "right"], required: false },
       dx: { type: "number", description: "Horizontal drag distance in CSS px from `from` center (mode 2 — resize/gutter). Alternative to `to`.", required: false },
       dy: { type: "number", description: "Vertical drag distance in CSS px from `from` center (mode 2).", required: false },
       steps: {
@@ -1979,9 +2141,9 @@ async function inProjectedRealm(
         required: false,
       },
     },
-    returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs, recording:{status:'not-requested'|'complete'|'failed',dir?,requestedFrames?,frames?,mode:'realtime',reason?} }",
+    returns: "{ dragged, click?, from, to?, zone?, dx?, dy?, steps, durationMs, surface?, recording:{status:'not-requested'|'complete'|'failed',dir?,requestedFrames?,frames?,mode:'realtime',reason?} }",
     message: (d) => (d.dragged ? tmsg("msg.ui.input.drag.dragged") : tmsg("msg.ui.input.drag.tap")),
-    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS", "OTHER_REALM", "SURFACE_INPUT_UNAVAILABLE"],
     danger: "inject",
     examples: [
       'ui.input.drag \'{"from":"win/main/chrome/tab/left/a.x","to":"win/main/chrome/tab/left/b.y","zone":"center"}\'',
@@ -2021,6 +2183,10 @@ async function inProjectedRealm(
       }
       const fromR = resolveExposed(p.from as string);
       if (!("el" in fromR)) return fromR;
+      // 끌기가 **다른 표면 위**에서 벌어지는가 — 콘텐츠 뷰 안이거나, 투영이 비추는 realm 안이다.
+      // 호스트 window 에 쏜 move/up 은 그 안에 없다.
+      const dragSurface = gestureSurface(fromR.el);
+      let toSurfacePt: { x: number; y: number } | null = null;
       const fr = fromR.el.getBoundingClientRect();
       const fromPt = { x: fr.left + fr.width / 2, y: fr.top + fr.height / 2 };
       const byDelta = p.dx != null || p.dy != null;
@@ -2032,6 +2198,18 @@ async function inProjectedRealm(
         // 모드 1 — 타겟에 드롭(탭 병합/분할).
         const toR = resolveExposed(p.to as string);
         if (!("el" in toR)) return toR;
+        if (dragSurface) {
+          // 끌기는 한 표면 안의 사건이다 — 두 끝이 다른 표면이면 그 사이에는 경로가 없다.
+          const toSurface = gestureSurface(toR.el);
+          if (toSurface === null || toSurface.label !== dragSurface.label) {
+            return {
+              ok: false as const,
+              code: "INVALID_PARAMS",
+              message: `끌기의 두 끝이 같은 표면이 아닙니다: ${dragSurface.label} → ${toSurface?.label ?? "호스트"}`,
+            };
+          }
+          toSurfacePt = gesturePoint(toSurface, {});
+        }
         const tr = toR.el.getBoundingClientRect();
         const zone = (p.zone as string) ?? "center";
         const zx = zone === "left" ? 0.08 : zone === "right" ? 0.92 : 0.5;
@@ -2066,6 +2244,45 @@ async function inProjectedRealm(
       const recordingReady = await (recording?.ready ?? Promise.resolve(false));
       if (recordingReady && recordLeadMs > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, recordLeadMs));
+      }
+      if (dragSurface) {
+        if (!hasContentViewHost()) return noGesturePath(p.from as string);
+        const start = gesturePoint(dragSurface, p);
+        const end = byDelta
+          ? { x: start.x + (Number(p.dx) || 0), y: start.y + (Number(p.dy) || 0) }
+          : toSurfacePt ?? start;
+        const button = p.button === "right" ? "right" as const : "left" as const;
+        // 잡기 전에 이동을 앞세우지 않는다. 누름 자체가 그 자리의 hover 를 만들고(실측
+        // 2026-08-08: 클릭 한 번이 mouseover·mouseenter·pointerover 를 냈다), 이동을 못 받는
+        // 엔진에서는 앞세운 한 걸음이 **끌기 전체를 죽인다**.
+        const seq: SurfacePointerInput[] = [{ ...start, kind: "down", button, clickCount: 1 }];
+        if (dist >= 5) {
+          for (let step = 1; step <= steps; step += 1) {
+            const progress = step / steps;
+            seq.push({
+              x: Math.round(start.x + (end.x - start.x) * progress),
+              y: Math.round(start.y + (end.y - start.y) * progress),
+              kind: "drag", button, clickCount: 1,
+            });
+          }
+        }
+        seq.push({ ...(dist >= 5 ? end : start), kind: "up", button, clickCount: 1 });
+        // 한 게스처는 한 호출이다 — 단계 사이를 호출자가 잇게 두면 그 간격을 CLI 왕복이 정한다.
+        for (const [index, step] of seq.entries()) {
+          const refused = await playGesture(dragSurface.label, [step]);
+          if (refused) return refused;
+          if (durationMs > 0 && step.kind === "drag" && index < seq.length - 2) {
+            await new Promise((resolve) => window.setTimeout(resolve, durationMs / steps));
+          }
+        }
+        const surfaceRecording = recording
+          ? await recording.report
+          : { status: "not-requested" as const, mode: "realtime" as const };
+        return {
+          dragged: dist >= 5, click: dist < 5, from: p.from,
+          ...(byDelta ? { dx: p.dx ?? 0, dy: p.dy ?? 0 } : { to: p.to, zone: p.zone ?? "center" }),
+          steps, durationMs, surface: dragSurface.label, recording: surfaceRecording,
+        };
       }
       // mousedown 은 잡는 요소(골/탭)에, move/up 은 window 에 — 골 리사이즈는 window 레벨
       // mousemove/mouseup 리스너를 그 핸들이 등록하므로 window 로 보내야 받는다.
