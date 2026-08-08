@@ -219,6 +219,56 @@ pub async fn webview_type_text(_app: AppHandle, _label: String, _text: String) -
 #[cfg(target_os = "macos")]
 const WHEEL_POINT_TOLERANCE: f64 = 1.0;
 
+/// 사건이 **창 좌표를 싣게** 만든다 — 자리는 가정하지 않고 요구한다.
+///
+/// 창에 붙지 않은 CGEvent 는 어느 좌표계를 답할지 우리가 정하지 못한다. 그래서 실어 만들고,
+/// AppKit 이 답하는 값을 읽고, 어긋난 만큼 한 번 옮긴다. 그러고도 어긋나면 **안 보낸다** —
+/// 닿지 못한 사건을 보냈다고 답할 수는 없다(실측 2026-08-07: 좌표가 조용히 틀리면 스크롤은
+/// 도는데 DOM 이 센 사건은 0 이었다).
+///
+/// 휠과 마우스가 같은 규율을 쓴다. 두 벌로 적으면 한쪽만 고쳐지는 날이 오고, 그 차이는 오류가
+/// 아니라 "어떤 입력만 안 닿는" 모습으로 나타난다.
+#[cfg(target_os = "macos")]
+unsafe fn place_event_in_window(
+    event: &core_graphics::event::CGEvent,
+    mut location: (f64, f64),
+    wanted: (f64, f64),
+    what: &str,
+) -> Result<*mut objc2::runtime::AnyObject, String> {
+    use core_graphics::geometry::CGPoint;
+    use foreign_types::ForeignType;
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::NSPoint;
+
+    let event_class = objc2::class!(NSEvent);
+    let event_ref = event.as_ptr().cast::<std::ffi::c_void>();
+    let mut ns_event: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
+    if ns_event.is_null() {
+        return Err("NSEvent 변환 실패".to_string());
+    }
+    let first: NSPoint = msg_send![&*ns_event, locationInWindow];
+    let mut carried = (first.x, first.y);
+    if !same_point(carried, wanted, WHEEL_POINT_TOLERANCE) {
+        location = realign_carried_point(location, carried, wanted, true);
+        event.set_location(CGPoint::new(location.0, location.1));
+        let retry: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
+        if retry.is_null() {
+            return Err("NSEvent 변환 실패".to_string());
+        }
+        ns_event = retry;
+        let again: NSPoint = msg_send![&*ns_event, locationInWindow];
+        carried = (again.x, again.y);
+    }
+    if !same_point(carried, wanted, WHEEL_POINT_TOLERANCE) {
+        return Err(format!(
+            "{what} 사건이 창 좌표를 싣지 못했습니다: 창 ({:.1},{:.1}) 사건 ({:.1},{:.1})",
+            wanted.0, wanted.1, carried.0, carried.1,
+        ));
+    }
+    Ok(ns_event)
+}
+
 /// child WKWebView 에 **실제** 마우스 사건을 전달한다.
 ///
 /// 합성 DOM 사건이 아니다. 자식 표면은 메인 DOM 웹뷰 아래에 깔리므로 그 자리의 마우스는 위에
@@ -292,7 +342,7 @@ pub async fn webview_send_mouse(
                     return;
                 }
             };
-            let mut location = (screen_point.x, main_frame.size.height - screen_point.y);
+            let location = (screen_point.x, main_frame.size.height - screen_point.y);
             let event = match CGEvent::new_mouse_event(
                 source,
                 event_type,
@@ -305,38 +355,13 @@ pub async fn webview_send_mouse(
                     return;
                 }
             };
-            // 자리는 가정하지 않고 요구한다 — 휠과 같은 규율이다(webview_send_wheel 머리말).
-            // 창에 안 붙은 사건이라 어느 좌표계를 답하는지 우리가 정하지 못한다: 실어 만들고,
-            // AppKit 이 답하는 값을 읽고, 어긋난 만큼 한 번 옮긴다. 그러고도 어긋나면 안 보낸다.
-            let event_class = objc2::class!(NSEvent);
-            let event_ref = event.as_ptr().cast::<std::ffi::c_void>();
-            let wanted = (window_point.x, window_point.y);
-            let mut ns_event: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
-            if ns_event.is_null() {
-                let _ = tx.try_send(Err("NSEvent 변환 실패".to_string()));
-                return;
-            }
-            let first: NSPoint = msg_send![&*ns_event, locationInWindow];
-            let mut carried = (first.x, first.y);
-            if !same_point(carried, wanted, WHEEL_POINT_TOLERANCE) {
-                location = realign_carried_point(location, carried, wanted, true);
-                event.set_location(CGPoint::new(location.0, location.1));
-                let retry: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
-                if retry.is_null() {
-                    let _ = tx.try_send(Err("NSEvent 변환 실패".to_string()));
+            let ns_event = match place_event_in_window(&event, location, (window_point.x, window_point.y), "마우스") {
+                Ok(placed) => placed,
+                Err(why) => {
+                    let _ = tx.try_send(Err(why));
                     return;
                 }
-                ns_event = retry;
-                let again: NSPoint = msg_send![&*ns_event, locationInWindow];
-                carried = (again.x, again.y);
-            }
-            if !same_point(carried, wanted, WHEEL_POINT_TOLERANCE) {
-                let _ = tx.try_send(Err(format!(
-                    "마우스 사건이 창 좌표를 싣지 못했습니다: 창 ({:.1},{:.1}) 사건 ({:.1},{:.1})",
-                    wanted.0, wanted.1, carried.0, carried.1,
-                )));
-                return;
-            }
+            };
             // 누름은 그 뷰를 입력 responder 로 만든다 — 사람이 누른 것과 같은 순서다.
             if matches!(event_type, CGEventType::LeftMouseDown) {
                 let _: bool = msg_send![&*window, makeFirstResponder: &*wk];
@@ -445,42 +470,16 @@ pub async fn webview_send_wheel(
             // root로 폴백해 문서를 옮기지만, wheel 추적 영역 밖이라 DOM에는 아무것도 닿지 않는다.
             // 실측(2026-08-07, B11/tauri): 스크롤 좌표는 0→480→0으로 정확히 움직이는데
             // 페이지가 센 wheel 사건은 0이었다 — 자리가 조용히 틀리면 그 모습으로 나타난다.
-            //
-            // 그 사건이 어느 좌표계를 답하는지는 우리가 정하지 못한다(창에 붙지 않은 사건이다).
-            // 그래서 가정하지 않고 요구한다: 자리를 실어 만들고, AppKit이 답하는 값을 읽고,
-            // 어긋난 만큼 한 번 옮긴다. 그러고도 어긋나면 보내지 않는다 — 닿지 못한 휠을
-            // 보냈다고 답할 수는 없다.
-            let event_class = objc2::class!(NSEvent);
-            let event_ref = event.as_ptr().cast::<std::ffi::c_void>();
-            let wanted = (window_point.x, window_point.y);
-            let mut location = (screen_point.x, main_frame.size.height - screen_point.y);
+            // 자리를 요구하는 규율은 한 자리가 든다(place_event_in_window).
+            let location = (screen_point.x, main_frame.size.height - screen_point.y);
             event.set_location(CGPoint::new(location.0, location.1));
-            let mut ns_event: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
-            if ns_event.is_null() {
-                let _ = tx.try_send(Err("NSEvent 변환 실패".to_string()));
-                return;
-            }
-            let first: NSPoint = msg_send![&*ns_event, locationInWindow];
-            let mut carried = (first.x, first.y);
-            if !same_point(carried, wanted, WHEEL_POINT_TOLERANCE) {
-                location = realign_carried_point(location, carried, wanted, true);
-                event.set_location(CGPoint::new(location.0, location.1));
-                let retry: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
-                if retry.is_null() {
-                    let _ = tx.try_send(Err("NSEvent 변환 실패".to_string()));
+            let ns_event = match place_event_in_window(&event, location, (window_point.x, window_point.y), "휠") {
+                Ok(placed) => placed,
+                Err(why) => {
+                    let _ = tx.try_send(Err(why));
                     return;
                 }
-                ns_event = retry;
-                let again: NSPoint = msg_send![&*ns_event, locationInWindow];
-                carried = (again.x, again.y);
-            }
-            if !same_point(carried, wanted, WHEEL_POINT_TOLERANCE) {
-                let _ = tx.try_send(Err(format!(
-                    "휠 사건이 창 좌표를 싣지 못했습니다: 창 ({:.1},{:.1}) 사건 ({:.1},{:.1})",
-                    wanted.0, wanted.1, carried.0, carried.1,
-                )));
-                return;
-            }
+            };
             let _: () = msg_send![&*wk, scrollWheel: &*ns_event];
             let _ = tx.try_send(Ok(()));
         })
@@ -572,6 +571,20 @@ pub async fn webview_capture_full(
     _app: AppHandle, _label: String, _path: String, _width: f64, _height: f64,
 ) -> Result<FullCaptureResult, String> {
     Err("webview_capture_full은 현재 macOS 구현이 필요합니다".into())
+}
+
+// 이 플랫폼에는 아직 이 통로가 없다 — 이름을 달고 거절한다. 조용히 성공하면 부른 쪽은
+// 눌렀다고 믿는다.
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub async fn webview_send_mouse(
+    _app: AppHandle,
+    _label: String,
+    _x: i32,
+    _y: i32,
+    _kind: String,
+) -> Result<(), String> {
+    Err("webview_send_mouse는 현재 macOS 구현이 필요합니다".into())
 }
 
 #[cfg(not(target_os = "macos"))]
