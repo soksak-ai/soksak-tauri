@@ -136,6 +136,49 @@ widened to make a run pass — when one cannot be met, the next bottleneck is
 located by measurement and recorded. A run that regresses fails (exit 1); a run
 that holds the line but misses a target exits 3 and is not called green.
 
+## Boot latency — first answer, not first pixel
+
+Boot is measured as the time from launch to the app answering its first
+command. `make boot-latency` runs it against a cold start: the launcher
+records when it called `open`, and every span reports through the activity
+ledger, so the process side and the front end read on one timeline.
+
+The launcher owns the start time. Measuring from the caller counts `make`
+and `node` startup as the app's boot — 1658ms measured that way against
+717ms measured from the launch itself.
+
+The measurement asks **once**. Retrying hides a lost delivery behind the
+next question: a `cmd-request` emitted before the window installs its
+listener is dropped, and the sender waits out `DEFAULT_REPLY_WAIT_MS`. That
+one lost delivery was 9.4s of an 11.7s boot until the window started
+draining what it missed (`cmd_listener_ready`).
+
+Spans, measured 2026-08-08 on a warm start at ~500ms total:
+
+| span | ms | what |
+| --- | --- | --- |
+| launch → `rust:process-enter` | ~75 | LaunchServices and dyld |
+| → `rust:setup-enter` | ~155 | framework init |
+| → `rust:data-open` | ~50 | store claim (the owner already holds it) |
+| → `executor:catalog-registered` | ~210 | webview and module graph |
+| → `executor:pending-drained` | ~5 | listener up, missed deliveries drained |
+
+Two costs are paid per owner lifetime rather than per launch, and both grow
+with the data:
+
+- The store's boot open runs `PRAGMA quick_check` over the whole database.
+  Measured at 106MB: 1471ms, 99.8% of the open (`init_base` 0ms,
+  `reconcile_fts` 2ms, `write_canary` 0ms). `data.stats` answers these as
+  `openTimings`. The gate stays where it is — `cored` owns the store and
+  outlives the app — but a growing store grows that one open.
+- Standing up `cored` when it is absent: 285–615ms.
+
+`controller.activate` is awaited by the core, so whatever a plugin does
+there lands on boot. Each activate is stamped by name and duration
+(`plugin-activate:<id>`), including when it throws. Activation is
+registration: restoring documents or other state belongs to the view that
+needs it, not to activate.
+
 ## Plugin performance contract
 
 Plugin event handlers (`onDidChangeActiveView` etc.) run **synchronously on
