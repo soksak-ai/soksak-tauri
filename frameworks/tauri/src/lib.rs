@@ -171,6 +171,7 @@ pub fn run() {
             }
         }
     });
+    boot_trace::mark_builder_ready();
     builder
         .setup(|app| {
             // 부팅 단계 계측 — 어디서 시간이 가는지 기계가 답한다(실측 2026-08-08: 명령이

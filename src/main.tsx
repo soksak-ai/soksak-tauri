@@ -102,6 +102,16 @@ function bootDone(): void {
 }
 
 async function boot(): Promise<void> {
+  // 문서가 실행을 시작한 시각을 원장에 옮긴다 — 그 앞은 웹뷰가 뜨기까지, 그 뒤는 번들이 도는
+  // 시간이다. 한 덩어리로 보면 어느 쪽을 고쳐야 하는지 알 수 없다.
+  const documentStart = (globalThis as { __soksakDocumentStart?: number }).__soksakDocumentStart;
+  if (typeof documentStart === "number") {
+    void bootInvoke("activity_publish", {
+      kind: "boot.step",
+      source: "boot",
+      payload: bootFactPayload("document-start", { atUnixMs: documentStart }),
+    }).catch(() => {});
+  }
   bootStamp("module-loaded"); // 모듈 그래프가 다 실행된 시점 — 이 앞은 웹뷰의 적재 시간이다
   installErrorLedger(); // 오류 원장 — 부트 최서두(어떤 이후 예외도 침묵하지 못한다)
   // 고른 프레임워크가 자기 것을 건다 — 구현·장치·스타일. 무엇이 걸리는지 여기서 묻지 않는다.

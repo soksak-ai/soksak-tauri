@@ -157,10 +157,12 @@ Spans, measured 2026-08-08 on a warm start at ~500ms total:
 
 | span | ms | what |
 | --- | --- | --- |
-| launch → `rust:process-enter` | ~75 | LaunchServices and dyld |
-| → `rust:setup-enter` | ~155 | framework init |
+| launch → `rust:process-enter` | ~80 | LaunchServices and dyld |
+| → `rust:builder-ready` | ~0 | plugin and state registration |
+| → `rust:setup-enter` | ~150 | framework builds the window |
 | → `rust:data-open` | ~50 | store claim (the owner already holds it) |
-| → `executor:catalog-registered` | ~210 | webview and module graph |
+| → `document-start` | ~110 | webview navigates and the document runs |
+| → `executor:catalog-registered` | ~110 | module graph |
 | → `executor:pending-drained` | ~5 | listener up, missed deliveries drained |
 
 Two costs are paid per owner lifetime rather than per launch, and both grow

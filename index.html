@@ -9,6 +9,11 @@
 
   <body>
     <div id="root"></div>
+    <!-- 문서가 실행을 시작한 시각. 모듈 그래프는 이 뒤에 돌므로, 이 값이 없으면 "웹뷰가 뜨기까지"
+         와 "번들이 도는 데 걸린 시간" 이 한 덩어리로 보인다 — 고칠 자리가 다르다. -->
+    <script>
+      window.__soksakDocumentStart = Date.now();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

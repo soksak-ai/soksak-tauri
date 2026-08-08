@@ -18,6 +18,14 @@ pub(crate) fn mark_process_entered() {
     let _ = PROCESS_ENTERED.set(unix_ms());
 }
 
+/// 빌더 체인이 다 서고 `run` 에 넘기기 직전. 앞은 플러그인·상태 등록이고 뒤는 프레임워크가
+/// 창을 만들어 setup 에 닿기까지다 — 이 둘도 고칠 자리가 다르다.
+static BUILDER_READY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+
+pub(crate) fn mark_builder_ready() {
+    let _ = BUILDER_READY.set(unix_ms());
+}
+
 fn unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -59,8 +67,14 @@ impl BootTrace {
     /// 원장은 저장소가 열린 뒤에만 쓸 수 있다. 그래서 찍을 때가 아니라 여기서 보내되, 각
     /// 도장은 자기가 찍힌 시각을 싣는다(`atUnixMs`).
     pub(crate) fn flush(&self, app: &tauri::AppHandle) {
-        let entered = PROCESS_ENTERED.get().copied().map(|at| ("process-enter".to_string(), at));
-        for (name, at) in entered.iter().chain(self.stamps.iter()) {
+        let early: Vec<(String, u64)> = [
+            ("process-enter", PROCESS_ENTERED.get().copied()),
+            ("builder-ready", BUILDER_READY.get().copied()),
+        ]
+        .into_iter()
+        .filter_map(|(name, at)| at.map(|at| (name.to_string(), at)))
+        .collect();
+        for (name, at) in early.iter().chain(self.stamps.iter()) {
             crate::activity::publish(
                 app,
                 "boot.step",

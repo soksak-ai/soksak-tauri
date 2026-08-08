@@ -138,10 +138,12 @@ exit 3 이고 초록이라 부르지 않는다.
 
 | 구간 | ms | 무엇 |
 | --- | --- | --- |
-| 띄움 → `rust:process-enter` | ~75 | LaunchServices·dyld |
-| → `rust:setup-enter` | ~155 | 프레임워크 초기화 |
+| 띄움 → `rust:process-enter` | ~80 | LaunchServices·dyld |
+| → `rust:builder-ready` | ~0 | 플러그인·상태 등록 |
+| → `rust:setup-enter` | ~150 | 프레임워크가 창을 만든다 |
 | → `rust:data-open` | ~50 | 저장소 점유(주인이 이미 쥐고 있다) |
-| → `executor:catalog-registered` | ~210 | 웹뷰·모듈 그래프 |
+| → `document-start` | ~110 | 웹뷰가 문서를 열고 실행을 시작한다 |
+| → `executor:catalog-registered` | ~110 | 모듈 그래프 |
 | → `executor:pending-drained` | ~5 | 리스너 등록, 밀린 배달 회수 |
 
 앱을 켤 때마다가 아니라 **주인 수명당 한 번** 무는 비용이 둘 있고, 둘 다 데이터가 자라면
