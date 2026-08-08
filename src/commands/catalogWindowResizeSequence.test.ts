@@ -16,10 +16,15 @@ vi.mock("../framework", () => ({
 }));
 vi.mock("../i18n", () => ({ tmsg: () => "resize sequence" }));
 vi.mock("../lib/projectRoot", () => ({ validateProjectRoot: vi.fn() }));
-vi.mock("../lib/webviewLabels", () => ({
-  browserLabelPrefix: (label: string) => `b-${label}-`,
-  currentWindowLabel: () => "main",
-}));
+// 문법은 흉내내지 않는다 — 진짜 파생을 쓰고 창 이름만 이 테스트의 것으로 바꾼다.
+vi.mock("../lib/webviewLabels", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/webviewLabels")>();
+  return {
+    ...actual,
+    browserLabelPrefix: (label: string) => actual.browserLabelPrefixIn(label ?? "main"),
+    currentWindowLabel: () => "main",
+  };
+});
 vi.mock("../state/windowBoot", () => ({ forgetWindowSlot: vi.fn() }));
 vi.mock("../lib/windowResizeProbe", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/windowResizeProbe")>()),

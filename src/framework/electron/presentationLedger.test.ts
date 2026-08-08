@@ -20,11 +20,12 @@ import {
 } from "./presentationLedger";
 import type { DisplayFrameSource } from "./presentationLedger";
 import type { PresentationTraceReceipt } from "../presentationLedger";
+import { browserLabelIn } from "../../lib/webviewLabels";
 
 const WINDOW_LABEL = "w-1";
 const REFRESH_MS = 1000 / 60;
 const VIEW_IDS = ["tab-left", "tab-right"] as const;
-const label = (viewId: string) => `b-${WINDOW_LABEL}-${viewId}`;
+const label = (viewId: string) => browserLabelIn(WINDOW_LABEL, viewId);
 
 interface Placed {
   slot: HTMLElement;

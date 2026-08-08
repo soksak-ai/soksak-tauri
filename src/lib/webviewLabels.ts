@@ -27,9 +27,24 @@ export function currentWindowLabel(): string {
   return ms.cached;
 }
 
+/** 어느 창의 브라우저 자식 웹뷰 라벨인가 — **이 문법이 사는 유일한 자리.**
+ *
+ * 이 창의 것을 묻는 자리는 아래 `browserLabel` 이고, 남의 창(테스트·교차 창 판정)을 묻는
+ * 자리는 이것이다. 후자가 없으면 부르는 쪽이 `b-${...}` 를 손으로 다시 적고, 그 사본은
+ * 문법이 바뀌는 날까지 조용하다.
+ */
+export function browserLabelIn(windowLabel: string, viewId: string): string {
+  return `${browserLabelPrefixIn(windowLabel)}${viewId}`;
+}
+
+/** 그 창의 브라우저 자식 웹뷰 라벨 접두사. */
+export function browserLabelPrefixIn(windowLabel: string): string {
+  return `${BROWSER_PREFIX}${windowLabel}-`;
+}
+
 // 브라우저 child webview 의 전역 유일 label. 형식: b-<windowLabel>-<viewId>.
 export function browserLabel(viewId: string): string {
-  return `b-${currentWindowLabel()}-${viewId}`;
+  return browserLabelIn(currentWindowLabel(), viewId);
 }
 
 /** 브라우저 자식 웹뷰 라벨의 접두사 — 정본은 `soksak_core::window_spec::BROWSER_PREFIX` 다.
@@ -42,7 +57,7 @@ export const BROWSER_PREFIX = "b-";
 // (webview_list 는 앱 전역 모든 창의 브라우저를 반환하므로, 접두사로 자기 것만 골라야 다른 창 것을
 // 잘못 닫지 않는다).
 export function browserLabelPrefix(): string {
-  return `${BROWSER_PREFIX}${currentWindowLabel()}-`;
+  return browserLabelPrefixIn(currentWindowLabel());
 }
 
 // 전역 고아 판정 — 부모 창이 살아있지 않은 브라우저 child label. label 문법(b-<창>-<뷰>)의
