@@ -883,7 +883,10 @@ export function registerDomCatalog(): void {
  * 주소줄이 전부 그랬고, 사람에게는 "주소를 입력할 수 없다" 로 보였다.
  */
 function projectedRealmNode(el: Element): boolean {
-  return el instanceof HTMLElement && el.dataset.formControl !== undefined;
+  // **이름의 모양으로 판정한다.** 값이 있는지로 보면 입력만 잡히고 버튼·표시 노드는 놓친다 —
+  // 실측 2026-08-08: 주소줄은 넘어갔는데 그 옆 이동 버튼은 투영 div 에 클릭이 꽂혔다(아무 일도
+  // 안 일어나고 성공). 투영인지 아닌지는 그 노드가 어느 realm 것인지의 문제이지 값의 문제가 아니다.
+  return el instanceof HTMLElement && /^[^/]+\/plugin-view\/[^/]+\//.test(el.dataset.node ?? "");
 }
 
 function projectedRealmRefusal(el: Element, addr: string) {
