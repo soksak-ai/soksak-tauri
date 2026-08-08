@@ -31,6 +31,12 @@ pub fn read_text_file(path: String, offset: Option<u64>) -> Result<TextData, Str
     soksak_core::fsx::read_text_file(&path, offset, Some(&home_dir()))
 }
 
+/// 여럿을 한 번에 — 왕복 수가 곧 기다림이다(soksak_core::fsx::read_text_files 머리말).
+#[tauri::command]
+pub fn read_text_files(paths: Vec<String>) -> Vec<soksak_core::fsx::TextFileEntry> {
+    soksak_core::fsx::read_text_files(&paths, Some(&home_dir()))
+}
+
 #[tauri::command]
 pub fn read_file_base64(path: String) -> Result<FileData, String> {
     soksak_core::fsx::read_file_base64(&path)

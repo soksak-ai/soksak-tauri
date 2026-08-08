@@ -367,6 +367,22 @@ function basename(path: string): string {
 
 // store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
 // 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+/** 적재 한 걸음 — 어디서 시간이 가는지 기계가 답한다.
+ *
+ * 실측 2026-08-08: `painted` 와 첫 플러그인 활성화 사이가 760ms 였는데 그 안을 가르는 자리가
+ * 없었다. 합계만 보이면 "부팅이 멈칫한다" 를 눈으로만 말하게 된다.
+ */
+/** 이번 적재에서 미리 받아 둔 번들 — 활성화가 이것을 먼저 본다. */
+const prefetchedSources = new Map<string, string>();
+
+function reloadStep(step: string): void {
+  void invoke("activity_publish", {
+    kind: "boot.step",
+    source: "boot",
+    payload: bootFactPayload(`plugins:${step}`),
+  }).catch(() => {});
+}
+
 export const usePlugins = moduleState("state/plugins#store", () =>
   create<PluginsState>((set, get) => {
   const persisted = loadPersisted();
@@ -436,9 +452,17 @@ export const usePlugins = moduleState("state/plugins#store", () =>
       setActive(p.manifest.id, instance);
       return;
     }
-    const data = await invoke<{ content: string }>("read_text_file", {
-      path: `${p.dir}/${p.manifest.entry}`,
-    });
+    // 미리 받아 둔 것이 있으면 그것을 쓴다 — 없을 때만 묻는다(개별 재적재·dev 소스 교체 경로).
+    const readStart = performance.now();
+    const prefetched = prefetchedSources.get(p.manifest.id);
+    const data = prefetched !== undefined
+      ? { content: prefetched }
+      : await invoke<{ content: string }>("read_text_file", {
+          path: `${p.dir}/${p.manifest.entry}`,
+        });
+    if (prefetched === undefined) {
+      reloadStep(`read:${p.manifest.id}:${Math.round(performance.now() - readStart)}ms:${data.content.length}b`);
+    }
     // 크롬 표준 게이트 — 번들 CSS 가 호스트 크롬 셀렉터/변수를 덮으면 탭 정렬이 깨진다. 명백한 정적 위반은
     // 거부(침묵 실패 금지). 사이드바/컨텐츠 뷰가 있는 플러그인에만 적용 — 뷰 없는 플러그인은 크롬 무관.
     if (p.manifest.contributes.views.length > 0) {
@@ -449,7 +473,9 @@ export const usePlugins = moduleState("state/plugins#store", () =>
         );
       }
     }
+    const moduleAt = performance.now();
     const module = await importPluginModule(data.content);
+    reloadStep(`module:${p.manifest.id}:${Math.round(performance.now() - moduleAt)}ms`);
     const instance = await activatePlugin(
       module,
       p.manifest,
@@ -518,7 +544,9 @@ export const usePlugins = moduleState("state/plugins#store", () =>
     reload: async () => {
       // 전체 재시작: 활성 인스턴스 전부 내리고 다시 스캔 — 부분 상태 금지(§0-3).
       await deactivateAll();
+      reloadStep("deactivated");
       const entries = await invoke<PluginScanEntry[]>("plugin_scan");
+      reloadStep(`scanned:${entries.length}`);
       const rejected: RejectedPlugin[] = [];
       const next: Record<string, PluginRuntime> = {};
 
@@ -539,6 +567,7 @@ export const usePlugins = moduleState("state/plugins#store", () =>
       // config가 정본이므로 앱 재시작 뒤에도 세 환경 모두 같은 방식으로 복원된다.
       const developmentUnits =
         (await invoke<UnitDevSource[]>("unit_dev_list")) ?? [];
+      reloadStep(`units:${developmentUnits.length}`);
       for (const unit of developmentUnits) {
         if (unit.kind !== "plugin") continue;
         try {
@@ -590,6 +619,30 @@ export const usePlugins = moduleState("state/plugins#store", () =>
         }
         ready.push(id);
       }
+      // 번들을 **한 번에** 읽어 둔다 — 왕복 수가 곧 기다림이다. 실측 2026-08-08: 34 건을
+      // 각각 물었더니 29 건이 한 통로로 몰려 각자 800ms 를 줄서 기다렸다(소요합 12,028ms,
+      // 벽시계 935ms). 크기와 무관했다 — 83KB 가 818ms, 1.7MB 가 778ms.
+      // 실패는 파일마다 따로 실리므로 하나가 없어도 나머지는 그대로 적재된다.
+      const prefetchAt = performance.now();
+      const wanted = ready
+        .map((id) => get().plugins[id])
+        .filter((p): p is PluginRuntime => !!p && p.manifest.entry !== null)
+        .map((p) => ({ id: p.manifest.id, path: `${p.dir}/${p.manifest.entry}` }));
+      // 못 읽으면 빈 목록이다 — 그러면 활성화가 자기 것을 하나씩 읽는다(예전 경로 그대로).
+      // 못 읽음을 "내용이 없다" 로 읽으면 플러그인이 통째로 죽는다.
+      const fetched =
+        wanted.length === 0
+          ? []
+          : (await invoke<{ path: string; content?: string }[] | null>("read_text_files", {
+              paths: wanted.map((w) => w.path),
+            }).catch(() => null)) ?? [];
+      const sources = prefetchedSources;
+      sources.clear();
+      for (const [i, row] of fetched.entries()) {
+        const w = wanted[i];
+        if (w && typeof row?.content === "string") sources.set(w.id, row.content);
+      }
+      reloadStep(`prefetched:${sources.size}/${wanted.length}:${Math.round(performance.now() - prefetchAt)}ms`);
       // 계측(boot.step) — 부트 병목의 실체는 플러그인별 활성화 시간이다(복원 300ms 기준).
       const bootT0 = performance.now();
       const perPlugin: Array<[string, number]> = [];

@@ -58,6 +58,49 @@ pub struct TextData {
     pub line_count: u64,
 }
 
+/// 여러 파일을 **한 번의 부름으로** 읽은 답.
+///
+/// 파일마다 자기 답을 든다. 하나가 없다고 나머지를 못 받으면 그 부름은 전부-아니면-전무가
+/// 되고, 플러그인 하나가 적재를 통째로 막는다.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextFileEntry {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub truncated: bool,
+    pub total_bytes: u64,
+}
+
+/// 물은 만큼 답한다 — 순서도 물은 순서다.
+///
+/// 왜 있나(실측 2026-08-08): 플러그인 적재가 번들 34 개를 각각 물었다. 읽기 자체는 20~30ms
+/// 인데 29 건이 한 통로로 몰리며 각자 800ms 를 기다렸다(소요합 12,028ms, 벽시계 935ms).
+/// 크기와 무관했다 — 83KB 가 818ms, 1.7MB 가 778ms. 기다린 것은 파일이 아니라 **줄**이다.
+pub fn read_text_files(paths: &[String], user_home: UserHome<'_>) -> Vec<TextFileEntry> {
+    paths
+        .iter()
+        .map(|path| match read_text_file(path, None, user_home) {
+            Ok(data) => TextFileEntry {
+                path: path.clone(),
+                content: Some(data.content),
+                error: None,
+                truncated: data.truncated,
+                total_bytes: data.total_bytes,
+            },
+            Err(why) => TextFileEntry {
+                path: path.clone(),
+                content: None,
+                error: Some(why),
+                truncated: false,
+                total_bytes: 0,
+            },
+        })
+        .collect()
+}
+
 /// 파일을 텍스트로 읽는다. 큰 파일은 앞 `TEXT_READ_LIMIT` 바이트만(truncated=true). 바이너리는
 /// NUL 바이트 유무로 판정(텍스트엔 NUL 이 없다) 후 에러 → 프론트가 폴백 분기.
 ///
@@ -332,6 +375,46 @@ pub fn validate_project_root(path: &str, user_home: UserHome<'_>) -> Result<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 규칙 — 여럿을 물으면 한 번에 답한다.
+    ///
+    /// 플러그인 적재는 번들 34 개를 각각 물었다. 파일 읽기 자체는 20~30ms 인데, 29 건이 한 통로로
+    /// 몰리면서 각자 800ms 를 기다렸다 — 실측 2026-08-08: 소요합 12,028ms, 벽시계 935ms, 크기와
+    /// 무관(83KB 818ms 대 1.7MB 778ms). 기다린 것은 파일이 아니라 **줄**이다.
+    ///
+    /// 한 번 물어 한 번 답하면 그 줄이 사라진다. 실패는 파일마다 따로 실린다 — 하나가 없다고
+    /// 나머지를 못 받으면 그 부름은 전부-아니면-전무가 되고, 플러그인 하나가 적재를 통째로 막는다.
+    mod 여럿을_한_번에 {
+            use super::super::*;
+    
+        #[test]
+        fn 파일마다_자기_답을_싣는다() {
+            let dir = std::env::temp_dir().join(format!("fsx-many-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let a = dir.join("a.txt");
+            let b = dir.join("b.txt");
+            std::fs::write(&a, "hello").unwrap();
+            std::fs::write(&b, "world").unwrap();
+            let missing = dir.join("none.txt");
+    
+            let out = read_text_files(
+                &[
+                    a.to_string_lossy().into_owned(),
+                    b.to_string_lossy().into_owned(),
+                    missing.to_string_lossy().into_owned(),
+                ],
+                UserHome::from(None),
+            );
+            assert_eq!(out.len(), 3, "물은 만큼 답한다 — 빠뜨리면 부른 쪽이 못 가린다");
+            assert_eq!(out[0].content.as_deref(), Some("hello"));
+            assert_eq!(out[1].content.as_deref(), Some("world"));
+            assert!(out[2].content.is_none(), "없는 파일은 내용이 없다");
+            assert!(out[2].error.is_some(), "없는 이유가 그 자리에 실린다");
+            assert!(out[0].error.is_none(), "성한 파일에 남의 실패가 묻지 않는다");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
 
     fn test_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("soksak-core-fsx-{name}-{}", std::process::id()));
