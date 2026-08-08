@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock("../framework", () => ({ invoke }));
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()), invoke }));
 
 import { registerDataCatalog } from "./catalogData";
 import { catalogJson, execute, getSpec, unregister } from "./registry";

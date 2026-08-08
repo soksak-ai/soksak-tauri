@@ -6,7 +6,8 @@ const { invoke, closure, loadBytes } = vi.hoisted(() => ({
   loadBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
 }));
 
-vi.mock("../framework", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()), invoke: (...args: unknown[]) => invoke(...args) }));
 vi.mock("../state/registry", () => ({ loadRegistryResourceBytes: loadBytes }));
 vi.mock("./registryInstaller", async (orig) => {
   const actual = await orig<typeof import("./registryInstaller")>();

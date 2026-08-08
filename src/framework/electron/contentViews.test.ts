@@ -19,7 +19,8 @@ vi.mock("../index", () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
   emitLocal: (event: string, payload: unknown) => emitted.push([event, payload]),
 }));
-vi.mock("../../framework", () => ({
+vi.mock("../../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../framework")>()),
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
   emitLocal: (event: string, payload: unknown) => emitted.push([event, payload]),
 }));

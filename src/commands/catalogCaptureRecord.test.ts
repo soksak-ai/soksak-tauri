@@ -6,7 +6,8 @@ const { recordWindowFrames } = vi.hoisted(() => ({
   recordWindowFrames: vi.fn(async ({ frames }: { frames: number }) => frames),
 }));
 
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   invoke: vi.fn(),
   frameworkPath: { tempDir: vi.fn(), join: vi.fn() },
 }));

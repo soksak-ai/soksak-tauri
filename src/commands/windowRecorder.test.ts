@@ -15,7 +15,8 @@ import {
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   invoke: vi.fn(),
   createStream: vi.fn(),
 }));

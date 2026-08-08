@@ -31,7 +31,8 @@ function manifest(version: string): string {
 const { invoke } = vi.hoisted(() => ({
   invoke: vi.fn(async (..._a: unknown[]): Promise<unknown> => undefined),
 }));
-vi.mock("../framework", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()), invoke: (...a: unknown[]) => invoke(...a) }));
 
 import { usePlugins } from "./plugins";
 

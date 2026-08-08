@@ -46,7 +46,8 @@ const invoke = vi.fn(async (cmd: string, args?: { path?: string }) => {
   }
   return undefined;
 });
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   invoke: (...a: unknown[]) => invoke(...(a as [string, { path?: string }])),
 }));
 

@@ -14,7 +14,8 @@ vi.stubGlobal("localStorage", storage);
 const { invoke } = vi.hoisted(() => ({
   invoke: vi.fn<(command: string, args?: unknown) => Promise<unknown>>(async () => undefined),
 }));
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   invoke: (command: string, args?: unknown) => invoke(command, args),
 }));
 

@@ -356,7 +356,13 @@ function deliverCommand(label, payload) {
     if (!undelivered.has(label)) undelivered.set(label, new Map());
     undelivered.get(label).set(payload.id, payload);
   }
-  return deliverEvent(win, CMD_REQUEST, payload);
+  const reached = deliverEvent(win, CMD_REQUEST, payload);
+  // 안 닿았으면 그 사실을 남긴다 — 밖에서는 "답이 안 온다" 로만 보이고, 배달이 실패한 것과
+  // 창이 답을 늦게 주는 것은 완전히 다른 자리다. 남기지 않으면 그 둘을 못 가른다.
+  if (!reached) {
+    note(`[electron-spike] 배달이 창에 닿지 않았다: ${label} ← ${method} (창 ${[...windows.keys()].join(",") || "없음"})`);
+  }
+  return reached;
 }
 
 /** 제어면을 세운다 — 이 소켓의 cored 에게 "창은 내가 갖고 있다"고 등록한다. */

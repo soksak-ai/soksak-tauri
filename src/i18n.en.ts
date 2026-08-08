@@ -651,6 +651,7 @@ export const en: Record<MsgKey, string> = {
   "msg.data.search": "{n} matches",
   "msg.debug.sleep": "Held the reply for {ms}ms",
   "msg.dev.remoteConfirmMock": "Queued a mock remote confirm request (#{id})",
+  "msg.app.quit.notMine": "{framework} was not the app named — left running",
   "msg.app.quit": "Quitting this app — the other app on the same home keeps running",
   "msg.app.environment": "{core} core · {mode} units",
   "msg.app.boot.status": "Boot phase: {phase}",

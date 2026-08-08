@@ -19,7 +19,8 @@ vi.mock("../plugins/hooks", () => ({
     payloads.push(p);
   },
 }));
-vi.mock("../framework", () => ({ invoke: async () => {} }));
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()), invoke: async () => {} }));
 
 afterEach(() => {
   emits.length = 0;

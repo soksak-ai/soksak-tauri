@@ -7,7 +7,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const calls: [string, unknown][] = [];
 
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   invoke: (cmd: string, args?: unknown) => {
     calls.push([cmd, args]);
     if (cmd === "app_is_release") return Promise.resolve(false);

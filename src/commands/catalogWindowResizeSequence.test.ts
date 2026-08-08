@@ -9,7 +9,8 @@ const { currentWindow, recordWindowFrames, sampleWindowResizeProbe, setPhysicalS
   setPhysicalSize: vi.fn(),
 }));
 
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   invoke: vi.fn(),
   currentWindow,
   windowByLabel: vi.fn(),

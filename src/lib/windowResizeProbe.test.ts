@@ -5,7 +5,8 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const outerPosition = vi.fn();
 const outerSize = vi.fn();
 
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   currentWindow: () => ({ outerPosition, outerSize }),
 }));
 

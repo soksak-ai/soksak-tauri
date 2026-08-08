@@ -14,7 +14,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const emit = vi.fn();
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   invoke: vi.fn(async () => undefined),
   engineProvision: { chromium: true, nativeChildWebview: false },
   emitLocal: (name: string, payload: unknown) => emit(name, payload),

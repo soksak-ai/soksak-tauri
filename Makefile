@@ -171,10 +171,17 @@ restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반�
 	}; \
 	old_pid="$$(owner_pid)"; \
 	if [ -n "$$old_pid" ] && host_ready; then \
-	  "$$CLI" app.quit >/dev/null || { echo "app.quit 실패"; exit 1; }; \
+	  "$$CLI" app.quit "{\"framework\":\"$$RESTART_FRAMEWORK\"}" >/dev/null \
+	    || { echo "app.quit 실패"; exit 1; }; \
 	fi; \
 	if [ -n "$$old_pid" ]; then \
 	  for _ in $$(seq 1 100); do kill -0 "$$old_pid" 2>/dev/null || break; sleep 0.1; done; \
+	  if kill -0 "$$old_pid" 2>/dev/null; then \
+	    echo "정연한 종료가 안 닿았다(PID $$old_pid) — 이 재기동이 띄운 실행물이므로 신호로 내린다."; \
+	    echo "  흔한 사유: 도는 실행물이 옛 판이라 지금의 종료 인자를 모른다(판올림 자신이 자기를 못 끈다)."; \
+	    kill "$$old_pid" 2>/dev/null || true; \
+	    for _ in $$(seq 1 50); do kill -0 "$$old_pid" 2>/dev/null || break; sleep 0.1; done; \
+	  fi; \
 	  kill -0 "$$old_pid" 2>/dev/null && { echo "종료 실패: dev IPC 소유 PID $$old_pid 가 남았다"; exit 1; }; \
 	fi; \
 	strays="$$(pgrep -f "$(DEV_EXECUTABLE)" 2>/dev/null || true)"; \
@@ -213,7 +220,7 @@ restart-electron: ## 이미 만들어진 Electron 번들을 빌드 없이 반복
 	}; \
 	old_pid="$$(owner_pid)"; \
 	if [ -n "$$old_pid" ] && host_ready; then \
-	  "$$CLI" app.quit >/dev/null || true; \
+	  "$$CLI" app.quit "{\"framework\":\"$$RESTART_FRAMEWORK\"}" >/dev/null || true; \
 	fi; \
 	if [ -n "$$old_pid" ]; then \
 	  for _ in $$(seq 1 100); do kill -0 "$$old_pid" 2>/dev/null || break; sleep 0.1; done; \
@@ -533,7 +540,7 @@ boot-latency: ## 앱이 첫 명령에 답하기까지를 잰다(냉시동 — �
 	@CLI="$(DEV_CLI)"; SOCKET="$(DEV_HOST_SOCKET)"; \
 	old_pid="$$(lsof -t "$$SOCKET" 2>/dev/null | head -n 1)"; \
 	if [ -n "$$old_pid" ]; then \
-	  "$$CLI" app.quit >/dev/null 2>&1 || true; \
+	  "$$CLI" app.quit '{"framework":"tauri"}' >/dev/null 2>&1 || true; \
 	  for _ in $$(seq 1 100); do kill -0 "$$old_pid" 2>/dev/null || break; sleep 0.1; done; \
 	fi; \
 	strays="$$(pgrep -f "$(DEV_EXECUTABLE)" 2>/dev/null || true)"; \

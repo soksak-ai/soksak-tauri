@@ -20,7 +20,8 @@ const harness = vi.hoisted(() => ({
   themeModes: [] as string[],
 }));
 
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   titlebarComposition: harness.provision,
   invoke: (cmd: string, args?: Record<string, unknown>) => {
     harness.invoked.push({ cmd, args });

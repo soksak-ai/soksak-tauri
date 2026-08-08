@@ -665,6 +665,7 @@ export const ko = {
   "msg.media.proxy.info": "미디어 프록시가 포트 {port} 에서 동작 중입니다",
   "msg.media.proxy.playlist": "프록시 HLS 플레이리스트 URL 을 만들었습니다",
   "msg.media.proxy.stream": "프록시 미디어 스트림 URL 을 만들었습니다",
+  "msg.app.quit.notMine": "{framework} 는 지목된 앱이 아닙니다 — 켜진 채로 둡니다",
   "msg.app.quit": "이 앱을 끕니다 — 같은 홈의 다른 앱은 계속 돕니다",
   "msg.app.environment": "{core} 코어 · {mode} 유닛",
   "msg.app.boot.status": "부트 위상: {phase}",

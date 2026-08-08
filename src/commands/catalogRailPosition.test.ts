@@ -9,7 +9,8 @@ vi.stubGlobal("localStorage", {
   removeItem: (key: string) => void mem.delete(key),
   clear: () => mem.clear(),
 });
-vi.mock("../framework", () => ({ invoke: vi.fn(async () => undefined) }));
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()), invoke: vi.fn(async () => undefined) }));
 
 import { registerCatalog } from "./catalog";
 import { execute } from "./registry";

@@ -28,7 +28,8 @@ const { framework } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   framework,
   invoke: async () => undefined,
   currentWindow: () => framework.currentWindow(),

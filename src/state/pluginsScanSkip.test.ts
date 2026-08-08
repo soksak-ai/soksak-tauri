@@ -27,7 +27,8 @@ const invoke = vi.fn(async (cmd: string) => {
   if (cmd === "plugin_scan") return scan;
   return undefined;
 });
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   invoke: (...a: unknown[]) => invoke(...(a as [string])),
 }));
 

@@ -10,7 +10,8 @@ const zoomNative = vi.hoisted(() => ({
 }));
 
 // 배율이 화면에 닿는 방법은 프레임워크의 것이다 — 이 검사는 **언제** 닿는지를 본다.
-vi.mock("../framework", () => ({
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
   invoke: zoomNative.invoke,
   framework: { setWindowZoom: zoomNative.invoke },
 }));

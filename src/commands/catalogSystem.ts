@@ -4,7 +4,7 @@
 // webview is wedged); the registry handler returns the same facts via the ipc_hello_info core command,
 // so the command is discoverable and actually runs on every path.
 
-import { engineProvision, framework, invoke } from "../framework";
+import { engineProvision, framework, frameworkName, invoke } from "../framework";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 
@@ -33,21 +33,39 @@ export function registerSystemCatalog(): void {
   // 창-지역으로 두는 이유가 그것이다(windowScoped 를 끄면 두 앱이 함께 죽는다).
   register("app.quit", {
     description:
-      "Quit the app this window lives in. The other framework on the same home keeps running.",
+      "Quit one app on this home. Two frameworks can run here at once and both name their " +
+      "orchestrator window `main`, so a call that names no framework reaches every app holding " +
+      "that label and quits them all. Name the one you mean. The answer says which app replied " +
+      "and whether it quit, so a caller can tell the two apart in a fan-out reply.",
     triggers: { ko: "앱 종료 끄기 quit" },
-    params: {},
+    params: {
+      framework: {
+        type: "string",
+        required: false,
+        description: "Quit only this framework (the name app.framework reports). Omitted quits whichever app receives the call.",
+      },
+    },
     danger: "destructive",
-    returns: "{ ok }",
-    message: () => tmsg("msg.app.quit"),
-    examples: ["app.quit"],
+    returns: "{ quit, framework }",
+    message: (d) =>
+      d.quit ? tmsg("msg.app.quit") : tmsg("msg.app.quit.notMine", { framework: String(d.framework) }),
+    examples: ["app.quit", 'app.quit \'{"framework":"tauri"}\''],
     // 종료는 결과 회신을 파괴할 수 있는 비가역 부수효과다. 소켓 executor가 cmd_result 전달을
     // 완료한 뒤에만 네이티브 경계를 호출한다. renderer 타이머나 프레임워크별 지연은 없다.
-    handler: (_params, ctx) => {
+    //
+    // **누가 답했는지 값으로 낸다.** 답이 여럿 오는 부름에서 이름이 없으면 어느 쪽이 죽고 어느
+    // 쪽이 살았는지 부른 쪽이 못 가른다 — 비가역 명령에서 그 무지는 관측 불가와 같다.
+    handler: (params, ctx) => {
       if (!ctx.afterReply) {
         throw new Error("app.quit에는 명령 응답 경계가 필요합니다");
       }
+      const wanted = typeof params.framework === "string" ? params.framework : null;
+      // 남을 지목한 부름은 나를 끄지 않는다. 이미 꺼졌든 아니든 답은 같다(멱등).
+      if (wanted !== null && wanted !== frameworkName) {
+        return { quit: false, framework: frameworkName };
+      }
       ctx.afterReply(() => invoke("app_quit"));
-      return { ok: true };
+      return { quit: true, framework: frameworkName };
     },
   });
 
