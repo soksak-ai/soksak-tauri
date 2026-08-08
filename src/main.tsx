@@ -140,12 +140,16 @@ async function boot(): Promise<void> {
     // 숨겨진 native 창의 최종 위치·크기를 먼저 확정한다. 첫 visible frame 뒤에 복원하면
     // 신호등과 DOM이 맞아도 창 전체가 한 번 점프한다.
     await initControlPlaneFrame();
+    bootStamp("control-frame");
     void respawnSavedWindows();
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <OrchestratorApp />,
     );
+    bootStamp("render");
     await applySavedWindowZoom();
+    bootStamp("zoom");
     await presentWindow();
+    bootStamp("presented");
     bootDone();
     return;
   }
