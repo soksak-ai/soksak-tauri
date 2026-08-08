@@ -41,6 +41,55 @@ const IDENTITY = frameworkIdentity();
 //
 // 쓰지 못하는 것은 사실이지 오류가 아니다 — 부모가 없는 프로세스는 정상적으로 그렇다.
 // 삼키되 **삼킨다는 것을 여기 적어 둔다**: 사유가 안 보이면 다음 사람이 로그를 의심한다.
+/** 적재 실패를 **화면과 원장 양쪽에** 낸다 — 백지는 답이 아니라 "모른다" 의 모습이다.
+ *
+ * 실측 2026-08-08: 개발 서버 없이 켜진 창이 `ERR_CONNECTION_REFUSED` 로 죽었는데, 그 사실은
+ * 로그 파일에만 있었고 사람에게는 흰 화면이었다. 무엇이 왜 안 떴는지 알려면 로그를 찾아
+ * 읽어야 했다.
+ *
+ * 실패한 창에는 앱이 없다(그래서 앱의 UI 를 못 쓴다). 그 자리에 최소 문서를 직접 그린다.
+ */
+const paintingFailure = new WeakSet();
+
+function showLoadFailure(win, label, code, desc, url) {
+  // 회신 창이 이미 닫혔으면 그릴 자리가 없다.
+  if (!win || win.isDestroyed()) return;
+  // 실패 화면 자체가 실패해도 다시 그리지 않는다 — 그리면 그 실패가 또 이 자리를 부른다.
+  if (paintingFailure.has(win)) return;
+  paintingFailure.add(win);
+  void callBackend("activity_publish", {
+    kind: "boot.error",
+    source: "boot",
+    payload: { step: "load-failed", window: label, code, desc, url, message: `· 적재 실패 ${desc} ${url}` },
+  }).catch(() => {});
+  const escape = (value) =>
+    String(value).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+  const page = `<!doctype html><meta charset="utf-8"><title>적재 실패</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; display: grid; place-items: center; height: 100vh;
+         font: 13px/1.6 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 34rem; padding: 2rem; }
+  h1 { font-size: 1rem; margin: 0 0 .75rem; }
+  code { font-family: ui-monospace, monospace; }
+  p { margin: .4rem 0; opacity: .85; }
+</style>
+<main>
+  <h1>이 창은 화면을 못 불러왔습니다</h1>
+  <p><code>${escape(desc)}</code> (${escape(code)})</p>
+  <p><code>${escape(url)}</code></p>
+  <p>개발 서버가 그 주소에 없으면 <code>pnpm dev:electron</code> 을 먼저 띄우고,
+     이 창은 <code>window.reload</code> 로 다시 부릅니다.</p>
+</main>`;
+  void win.webContents
+    .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`)
+    // 그렸다는 사실도 남긴다 — 안 남기면 "실패 화면이 떴는가" 를 다시 눈으로 확인해야 하고,
+    // 렌더러가 죽은 창은 물어볼 수도 없다.
+    .then(() => note(`[renderer:${label}] 실패 화면을 그렸다: ${desc}`))
+    .catch((e) => note(`[renderer:${label}] 실패 화면도 못 그렸다: ${e && e.message}`))
+    .finally(() => paintingFailure.delete(win));
+}
+
 function note(line) {
   try {
     console.error(line);
@@ -152,8 +201,16 @@ function createWindow(label, rect, bootQuery) {
   win.webContents.on("render-process-gone", (_e, details) => {
     note(`[renderer:${label}] 렌더러 프로세스 종료: ${JSON.stringify(details)}`);
   });
-  win.webContents.on("did-fail-load", (_e, code, desc, url) => {
+  win.webContents.on("did-fail-load", (_e, code, desc, url, isMainFrame) => {
     note(`[renderer:${label}] 적재 실패: ${code} ${desc} ${url}`);
+    // 이 창이 못 뜬 것만 화면에 낸다.
+    //
+    // 이 사건은 하위 프레임의 실패에도 뜨고, 화면을 갈아타며 중단된 적재(-3 ERR_ABORTED)에도
+    // 뜬다. 그것까지 실패 화면으로 덮으면 멀쩡히 도는 앱을 지운다 — 없던 결함을 고침이
+    // 만드는 자리다.
+    if (isMainFrame !== true) return;
+    if (code === -3) return;
+    showLoadFailure(win, label, code, desc, url);
   });
   win.webContents.on("unresponsive", () => {
     note(`[renderer:${label}] 응답 없음`);
@@ -249,6 +306,59 @@ function announceWindows() {
   });
 }
 
+/** 밖에서 온 명령 하나를 이 창으로 — **프레임워크가 아는 것은 창 안이 죽어도 답한다.**
+ *
+ * 보통은 창의 실행기가 답한다. 그런데 그 실행기는 화면이 떠야 산다: 적재가 실패한 창은
+ * 아무 명령에도 답하지 못하고, 그러면 **왜 못 떴는지 보려는 명령마저 못 부른다**(실측
+ * 2026-08-08: 개발 서버 없이 켜진 창이 백지였는데 그 창을 찍을 방법이 없었다).
+ *
+ * 창·웹뷰·캡처는 원래 이 프로세스의 사실이다(창 안은 그것을 다시 이 프로세스에 물어본다).
+ * 그러니 그 갈래는 여기서 바로 답한다 — 한 홉 줄고, 창 안이 죽어도 답이 나온다.
+ */
+/** 창별로, 보냈는데 아직 답이 없는 봉투. 리스너가 서기 전에 온 것을 되돌리는 재료다. */
+const undelivered = new Map();
+
+/** 이 창이 못 받은 봉투를 다시 건다 — 리스너가 정말 선 뒤 창이 부른다. */
+function resendPending(label) {
+  const win = windowFor(label);
+  const pending = undelivered.get(label);
+  if (!win || win.isDestroyed() || !pending || pending.size === 0) return 0;
+  let sent = 0;
+  for (const payload of pending.values()) {
+    if (deliverEvent(win, CMD_REQUEST, payload)) sent += 1;
+  }
+  return sent;
+}
+
+/** 답이 지나갔다 — 그 봉투는 더 이상 밀린 것이 아니다. */
+function noteAnswered(id) {
+  for (const pending of undelivered.values()) pending.delete(id);
+}
+
+function deliverCommand(label, payload) {
+  const win = windowFor(label);
+  const method = payload && payload.method;
+  if (win && !win.isDestroyed() && method && !backend?.serves(method) && native.claims(method)) {
+    void Promise.resolve()
+      .then(() => native.serve(method, payload.params ?? {}, nativeContext(win.webContents), recordDemand))
+      .then((value) => callBackend("cmd_result", { id: payload.id, result: value }))
+      .catch((e) =>
+        callBackend("cmd_result", {
+          id: payload.id,
+          result: frameworkError(e && e.code ? e.code : "INTERNAL", e && e.message ? e.message : String(e)),
+        }).catch(() => {}),
+      );
+    return true;
+  }
+  // 창이 아직 리스너를 안 달았으면 이 사건은 아무도 안 받는다 — 봉투를 쥐고 있다가 그 창이
+  // 준비를 알릴 때 다시 건다(cmd_listener_ready). 답이 지나가면 그때 놓는다.
+  if (payload && payload.id !== undefined) {
+    if (!undelivered.has(label)) undelivered.set(label, new Map());
+    undelivered.get(label).set(payload.id, payload);
+  }
+  return deliverEvent(win, CMD_REQUEST, payload);
+}
+
 /** 제어면을 세운다 — 이 소켓의 cored 에게 "창은 내가 갖고 있다"고 등록한다. */
 function standUpControl(socketPath) {
   controlHost = createControlHost({
@@ -256,7 +366,7 @@ function standUpControl(socketPath) {
     // 신고는 이 다리를 지나간다 — 지나갈 때 쥐어 두고, 다시 붙을 때 다시 보낸다.
     ownerAnswered: () => ownerAnsweredNames,
     facts: windowFacts,
-    deliver: (label, payload) => deliverEvent(windowFor(label), CMD_REQUEST, payload),
+    deliver: (label, payload) => deliverCommand(label, payload),
     // 방송은 창을 가리지 않는다 — 활동 부채질과 같은 집합(창 레지스트리 전부).
     broadcast: (event, payload) => {
       let all = true;
@@ -473,6 +583,9 @@ ipcMain.handle("framework:invoke", async (e, { cmd, args }) => {
   if (cmd === "control_owner_answered" && Array.isArray(args?.names)) {
     ownerAnsweredNames = args.names.map(String);
   }
+  // 창이 자기 리스너가 섰다고 알린다 — 그 사이 사라진 배달을 되돌린다. 기다리지 않는다.
+  if (cmd === "cmd_listener_ready") return { ok: true, value: resendPending(String(args?.window ?? "")) };
+  if (cmd === "cmd_result" && args && args.id !== undefined) noteAnswered(args.id);
   // 프레임워크의 것이 먼저다 — 창·웹뷰·네이티브 표면은 소켓 너머로 물어볼 수 없다(거기엔 창이 없다).
   // 다만 **백엔드가 서빙한다고 선언한 이름은 백엔드의 것**이다(위 backendServes).
   // 백엔드가 **스스로 선언한** 이름은 백엔드의 것이다(backend.cjs `declare`). 이름 접두사로
