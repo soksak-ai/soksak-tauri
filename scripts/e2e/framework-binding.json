@@ -278,6 +278,13 @@
       "note": "세는 프레임워크와 재는 자리가 같은 집합인지, 그 자리가 부르는 변수·타깃이 실재하는지 고정한다."
     },
     {
+      "file": "lib/await-socket.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "소켓 자리가 생기기를 파일시스템 사건으로 기다린다. 되묻지 않는다 — 부팅을 재는 자리에서 되묻기 주기는 재는 대상만큼 큰 오차다."
+    },
+    {
       "file": "lib/boot-latency.mjs",
       "role": "lib",
       "class": "A",

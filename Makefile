@@ -111,10 +111,6 @@ build: spec-gate cli ## 릴리스 번들 빌드 → "soksak-tauri.app"(기본 �
 
 build-dev: spec-gate cli-dev ## 개발 정체성 앱 번들 → "soksak-tauri-dev.app" + soksak-cored
 	CARGO_BUILD_TARGET=$(TAURI_TARGET) $(PNPM) tauri build --debug --bundles app --target $(TAURI_TARGET) --config $(DEV_BUNDLE_CONFIG)
-	@# 빌드가 바뀌면 상주 데몬은 낡은다. 데몬은 앱보다 오래 살아서 앱만 갈면 저장소를 쥔 쪽이
-	@# 옛 실행물이고, 새 계약으로 물으면 그 답이 모양이 안 맞는다(실측 2026-08-08:
-	@# `주인의 답이 이 명령의 모양이 아니다`). 다음 기동에서 앱이 새 실행물로 다시 세운다.
-	@$(MAKE) --no-print-directory stop-cored-dev
 
 build-debug: spec-gate cli-debug ## 디버그 번들 빌드 → "soksak-tauri-debug.app"(주황 아이콘) + sok-debug
 	CARGO_BUILD_TARGET=$(TAURI_TARGET) $(PNPM) tauri build --debug --target $(TAURI_TARGET) --config $(DEBUG_CONFIG)
@@ -188,6 +184,7 @@ restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반�
 	  for _ in $$(seq 1 50); do pgrep -f "$(DEV_EXECUTABLE)" >/dev/null 2>&1 || break; sleep 0.1; done; \
 	  pgrep -f "$(DEV_EXECUTABLE)" >/dev/null 2>&1 && { echo "유령 회수 실패: 같은 앱 프로세스가 남았다"; exit 1; }; \
 	fi; \
+	$(MAKE) --no-print-directory stop-cored-dev; \
 	$(MAKE) --no-print-directory run-dev >/dev/null; \
 	"$$CLI" host_wait '"'"'{"timeoutMs":30000}'"'"' >/dev/null 2>&1 || true; \
 	ready=0; \
@@ -522,6 +519,10 @@ stop-cored-dev: ## dev cored 데몬을 내린다(앱이 다음 기동에서 새 
 	@# 데몬은 앱보다 오래 산다. 앱만 갈면 저장소 주인은 옛 실행물이라, 새 빌드의 계약으로 물었을
 	@# 때 그 답이 모양이 안 맞는다(실측 2026-08-08: `주인의 답이 이 명령의 모양이 아니다`).
 	@# 검증하는 실행물과 저장소를 쥔 실행물은 같은 빌드여야 한다.
+	@#
+	@# **앱이 내려간 뒤에 부른다.** 살아 있는 앱 밑에서 데몬을 빼면 그 앱을 부를 길이 없어져
+	@# (CLI 는 데몬 소켓으로 간다) 재기동이 "종료 실패" 로 죽는다 — 실측 2026-08-08, 내가 이
+	@# 호출을 빌드 뒤에 두어 그렇게 만들었다.
 	@pkill -f "soksak-cored .*--home $(HOME)/.soksak-dev" 2>/dev/null || true
 	@for _ in $$(seq 1 50); do 	  pgrep -f "soksak-cored .*--home $(HOME)/.soksak-dev" >/dev/null 2>&1 || break; sleep 0.1; 	done
 	@pgrep -f "soksak-cored .*--home $(HOME)/.soksak-dev" >/dev/null 2>&1 	  && { echo "dev cored 회수 실패"; exit 1; } || true

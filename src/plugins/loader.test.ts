@@ -614,3 +614,58 @@ describe("activatePlugin — 정적 모듈 형태({controller, commands, views})
     expect(useViewRegistry.getState().views["demo.ghost"]).toBeUndefined();
   });
 });
+
+// 규칙 — 코어가 기다리는 일은 값으로 답한다.
+//
+// `activate` 는 코어가 기다린다(등록이 끝나야 그 플러그인의 명령·뷰가 존재한다). 무엇을 하는지는
+// 플러그인이 정하므로, 저장소를 읽거나 네트워크를 타는 activate 가 있으면 그 시간이 통째로
+// 부팅에 실린다. 실측 2026-08-08: 뷰가 하나도 안 열린 상태에서 한 플러그인이 activate 에서
+// 자기 문서를 복원해 429ms 를 썼고, 원장에는 그 조회만 있고 **누가 시켰는지**가 없었다.
+//
+// 막지 않는다. 이름과 함께 잰다 — 못 재면 못 가리고, 못 가리면 아무도 안 고친다.
+describe("activate 비용은 이름과 함께 원장에 남는다", () => {
+  it("활성화가 끝나면 그 플러그인의 이름으로 boot.step 을 낸다", async () => {
+    const framework = await import("../framework");
+    const invoke = vi.spyOn(framework, "invoke").mockResolvedValue(undefined as never);
+    await activatePlugin({ activate: () => {} }, manifestOf(), "/d", fakeDeps());
+    const stamped = invoke.mock.calls.find(
+      ([cmd, args]) =>
+        cmd === "activity_publish" &&
+        String((args as { payload?: { step?: unknown } })?.payload?.step ?? "").startsWith(
+          "plugin-activate:",
+        ),
+    );
+    expect(stamped, "활성화 비용을 아무도 안 냈다").toBeTruthy();
+    const payload = (stamped?.[1] as { payload: { step: string; tookMs: unknown } }).payload;
+    expect(payload.step).toBe("plugin-activate:demo");
+    expect(typeof payload.tookMs).toBe("number");
+    invoke.mockRestore();
+  });
+
+  // 실패한 활성화도 시간을 쓴다 — 그 시간을 안 세면 가장 비싼 자리가 원장에서 사라진다.
+  it("활성화가 실패해도 쓴 시간은 남긴다", async () => {
+    const framework = await import("../framework");
+    const invoke = vi.spyOn(framework, "invoke").mockResolvedValue(undefined as never);
+    await expect(
+      activatePlugin(
+        {
+          activate: () => {
+            throw new Error("boom");
+          },
+        },
+        manifestOf(),
+        "/d",
+        fakeDeps(),
+      ),
+    ).rejects.toThrow();
+    expect(
+      invoke.mock.calls.some(
+        ([cmd, args]) =>
+          cmd === "activity_publish" &&
+          (args as { payload?: { step?: string } })?.payload?.step ===
+            "plugin-activate:demo",
+      ),
+    ).toBe(true);
+    invoke.mockRestore();
+  });
+});

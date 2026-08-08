@@ -36,6 +36,8 @@ import {
   type ServiceProxyDeps,
 } from "./serviceProxy";
 import { busOn } from "./bus";
+import { invoke as frameworkInvoke } from "../framework";
+import { bootFactPayload } from "../lib/bootFact";
 import { enforceEngineNeeds } from "./engineNeeds";
 import { engineProvision } from "../framework";
 import { useSettings } from "../state/settings";
@@ -198,6 +200,20 @@ function staticEntry(mod: StaticModule): EntryFns {
       await mod.controller?.deactivate?.();
     },
   };
+}
+
+/**
+ * 이 플러그인의 활성화가 얼마나 걸렸는지 원장에 남긴다.
+ *
+ * 부팅 도장과 같은 갈래(`boot.step`)로 낸다 — 부팅이 늦을 때 사람이 두 목록을 맞춰 보지 않아도
+ * 한 축에서 읽힌다. 발행 실패는 삼킨다: 계측이 부팅을 죽이면 재는 것이 재는 대상을 망친다.
+ */
+function publishActivateCost(id: string, tookMs: number): void {
+  void frameworkInvoke("activity_publish", {
+    kind: "boot.step",
+    source: "boot",
+    payload: bootFactPayload(`plugin-activate:${id}`, { tookMs: Math.round(tookMs) }),
+  }).catch(() => {});
 }
 
 // entry 모듈 형태 해석: default export 객체 우선, named export 폴백.
@@ -382,12 +398,24 @@ export async function activatePlugin(
     }
   }
 
+  // 활성화가 얼마나 걸렸는지 이름과 함께 남긴다.
+  //
+  // 코어는 이 호출을 기다린다 — 등록이 끝나야 그 플러그인의 명령·뷰가 존재하기 때문이다.
+  // 그런데 무엇을 하는지는 플러그인의 몫이라, activate 에서 저장소를 읽거나 네트워크를 타는
+  // 플러그인이 있으면 그 시간이 통째로 여기 실린다. 재는 자리가 없으면 그것이 누구인지 못
+  // 가리고, 못 가리면 아무도 안 고친다(실측 2026-08-08: 뷰가 하나도 안 열린 상태에서 한
+  // 플러그인이 activate 에서 자기 문서를 복원해 429ms 를 썼다).
+  //
+  // 막지는 않는다 — 무엇이 등록에 필요한 일인지는 그 플러그인이 안다. 대신 값으로 답한다.
+  const activateAt = performance.now();
   try {
     await entry.activate(ctx);
   } catch (e) {
     disposeSubscriptions();
     tracker.disposeAll();
     throw new Error(`activate 실패(${manifest.id}): ${e}`);
+  } finally {
+    publishActivateCost(manifest.id, performance.now() - activateAt);
   }
 
   // [conformance] activate 후 inventory — declared≡actual 의 declared→actual 방향.
