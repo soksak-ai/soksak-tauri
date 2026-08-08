@@ -46,6 +46,15 @@ pub fn connect(path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
+/// 저장소 전수 검사 한 번. 판정 문자열을 그대로 돌린다("ok" 가 정상).
+///
+/// 헤더는 멀쩡하나 내부 페이지가 손상된 저장소는 연결·DDL·부분 조회를 통과해 **부분 유실을
+/// 성공으로 오인**하게 한다. 그것을 잡는 것이 이 검사다.
+pub fn deep_check(conn: &Connection) -> Result<String, String> {
+    conn.query_row("PRAGMA quick_check", [], |r| r.get(0))
+        .map_err(|e| e.to_string())
+}
+
 /// 부팅 개방 — connect + 게이트. 저장소를 소유한 쪽이 부팅에서 **한 번** 부른다.
 pub fn open(path: &Path) -> Result<Connection, String> {
     let conn = connect(path)?;
@@ -53,15 +62,25 @@ pub fn open(path: &Path) -> Result<Connection, String> {
     // 조회가 통과해 부분 유실을 성공으로 오인한다(비헤더 손상 무음 통과). quick_check(integrity_check
     // 경량판)로 페이지 무결성을 부팅 개방에서 확인해 손상을 복구 경로(open_or_recover)로 넘긴다. 정상
     // DB 는 "ok" 단행 반환. 비용은 부팅 개방 1회(DDL 이전에 확인 — 손상본에 스키마 변경을 얹지 않는다).
-    let integrity_verdict: String = conn
-        .query_row("PRAGMA quick_check", [], |r| r.get(0))
-        .map_err(|e| e.to_string())?;
+    //
+    // 각 단계가 얼마나 걸렸는지 남긴다 — 이 개방은 부팅의 임계경로에 있고, 그중 quick_check 는
+    // **데이터 크기에 비례해 자란다**(실측 2026-08-08: 106MB 저장소에서 1471ms, 개방 비용의
+    // 99.8%). 이 비용은 저장소를 소유한 프로세스의 수명당 한 번이지 앱을 켤 때마다가 아니다 —
+    // 그래서 게이트는 그대로 둔다. 다만 저장소가 자라면 그 한 번이 자란다는 사실은 재서 남긴다.
+    let at = std::time::Instant::now();
+    let integrity_verdict: String = deep_check(&conn)?;
+    integrity::record_open_step("quick_check", at.elapsed().as_millis());
     if integrity_verdict != "ok" {
         return Err(format!("integrity check failed: {integrity_verdict}"));
     }
+    let at = std::time::Instant::now();
     store::init_base(&conn)?;
+    integrity::record_open_step("init_base", at.elapsed().as_millis());
+    let at = std::time::Instant::now();
     // [M0] 부팅 시 FTS 정합 backstop(과거 비원자 put crash 의 orphan 청소). 멱등·저비용.
     store::reconcile_fts(&conn)?;
+    integrity::record_open_step("reconcile_fts", at.elapsed().as_millis());
+    let at = std::time::Instant::now();
     // 쓰기 게이트 — 위의 검사들은 전부 읽기라, 읽기는 성하고 쓰기만 무너진 저장소를 통과시킨다
     // (실측: 조회·검색·백업은 되는데 모든 레코드 쓰기가 `out of memory`. 사용자에게는 저장이
     // 조용히 실패하는 앱으로 보였다). 한 줄 써 보고 되돌린 뒤, 막혀 있으면 판정만 남긴다.
@@ -72,6 +91,7 @@ pub fn open(path: &Path) -> Result<Connection, String> {
         Ok(()) => integrity::record_boot_gate("부팅 쓰기 정상"),
         Err(why) => integrity::record_boot_gate(format!("부팅 쓰기 막힘: {why}")),
     }
+    integrity::record_open_step("write_canary", at.elapsed().as_millis());
     Ok(conn)
 }
 

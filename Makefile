@@ -111,6 +111,10 @@ build: spec-gate cli ## 릴리스 번들 빌드 → "soksak-tauri.app"(기본 �
 
 build-dev: spec-gate cli-dev ## 개발 정체성 앱 번들 → "soksak-tauri-dev.app" + soksak-cored
 	CARGO_BUILD_TARGET=$(TAURI_TARGET) $(PNPM) tauri build --debug --bundles app --target $(TAURI_TARGET) --config $(DEV_BUNDLE_CONFIG)
+	@# 빌드가 바뀌면 상주 데몬은 낡은다. 데몬은 앱보다 오래 살아서 앱만 갈면 저장소를 쥔 쪽이
+	@# 옛 실행물이고, 새 계약으로 물으면 그 답이 모양이 안 맞는다(실측 2026-08-08:
+	@# `주인의 답이 이 명령의 모양이 아니다`). 다음 기동에서 앱이 새 실행물로 다시 세운다.
+	@$(MAKE) --no-print-directory stop-cored-dev
 
 build-debug: spec-gate cli-debug ## 디버그 번들 빌드 → "soksak-tauri-debug.app"(주황 아이콘) + sok-debug
 	CARGO_BUILD_TARGET=$(TAURI_TARGET) $(PNPM) tauri build --debug --target $(TAURI_TARGET) --config $(DEBUG_CONFIG)
@@ -512,6 +516,15 @@ sidecar-browser-chromium-archive: sidecar-browser-chromium ## 배포 아카이�
 	bash scripts/release/archive-regular-files.sh "$$root/dist" "$$out"; \
 	echo "아카이브: $$out"; \
 	shasum -a 256 "$$out" | awk '{print "sha256: "$$1}'
+
+.PHONY: stop-cored-dev
+stop-cored-dev: ## dev cored 데몬을 내린다(앱이 다음 기동에서 새 실행물로 다시 세운다)
+	@# 데몬은 앱보다 오래 산다. 앱만 갈면 저장소 주인은 옛 실행물이라, 새 빌드의 계약으로 물었을
+	@# 때 그 답이 모양이 안 맞는다(실측 2026-08-08: `주인의 답이 이 명령의 모양이 아니다`).
+	@# 검증하는 실행물과 저장소를 쥔 실행물은 같은 빌드여야 한다.
+	@pkill -f "soksak-cored .*--home $(HOME)/.soksak-dev" 2>/dev/null || true
+	@for _ in $$(seq 1 50); do 	  pgrep -f "soksak-cored .*--home $(HOME)/.soksak-dev" >/dev/null 2>&1 || break; sleep 0.1; 	done
+	@pgrep -f "soksak-cored .*--home $(HOME)/.soksak-dev" >/dev/null 2>&1 	  && { echo "dev cored 회수 실패"; exit 1; } || true
 
 .PHONY: boot-latency
 boot-latency: ## 앱이 첫 명령에 답하기까지를 잰다(냉시동 — 지금 뜬 판을 끄고 새로 띄운다)

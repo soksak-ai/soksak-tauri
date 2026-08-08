@@ -293,40 +293,14 @@ export function registerDataCatalog(): void {
     // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
     windowScoped: false,
     returns:
-      "{ bootGate, sqliteVersion, softHeapLimit, hardHeapLimit, memoryUsed, memoryHighwater, cacheSize, pageSize, pageCount, freelistCount, recordsIndexes }",
+      "{ bootGate, openTimings, sqliteLog, sqliteVersion, softHeapLimit, hardHeapLimit, memoryUsed, memoryHighwater, cacheSize, pageSize, pageCount, freelistCount, recordsIndexes }",
     message: (d) => tmsg("msg.data.stats", { n: Number(d.memoryUsed) }),
     errors: ["INTERNAL"],
     examples: ["data.stats"],
-    handler: async () => {
-      const s = await invoke<{
-        boot_gate: string;
-        sqlite_log: string[];
-        sqlite_version: string;
-        soft_heap_limit: number;
-        hard_heap_limit: number;
-        memory_used: number;
-        memory_highwater: number;
-        cache_size: number;
-        page_size: number;
-        page_count: number;
-        freelist_count: number;
-        records_indexes: number;
-      }>("data_stats");
-      return {
-        bootGate: s.boot_gate,
-        sqliteLog: s.sqlite_log,
-        sqliteVersion: s.sqlite_version,
-        softHeapLimit: s.soft_heap_limit,
-        hardHeapLimit: s.hard_heap_limit,
-        memoryUsed: s.memory_used,
-        memoryHighwater: s.memory_highwater,
-        cacheSize: s.cache_size,
-        pageSize: s.page_size,
-        pageCount: s.page_count,
-        freelistCount: s.freelist_count,
-        recordsIndexes: s.records_indexes,
-      };
-    },
+    // 모양은 답하는 쪽이 정한다 — 여기서 필드를 다시 나열하면 저장소가 새 사실을 답해도 그
+    // 목록에 없는 것은 영영 안 건너간다(실측 2026-08-08: 개방 단계별 소요를 실었는데 이 손
+    // 목록이 안 실어 보냈고, 이름 규약까지 갈리자 답 전체가 `{}` 로 왔다).
+    handler: async () => await invoke<Record<string, unknown>>("data_stats"),
   });
 
   // 저장소 자기 진단 — 부팅 게이트(quick_check)는 인덱스↔테이블 대조를 하지 않아 인덱스 손상을

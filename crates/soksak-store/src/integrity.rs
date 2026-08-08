@@ -308,7 +308,15 @@ fn reindex_each(conn: &Connection) -> Vec<String> {
 // Deserialize 도 판다 — 이 값이 소켓을 건너 다른 프로세스의 답으로 돌아온다(저장소 주인이
 // 하나라 통계도 주인이 낸다). 직렬화만 있으면 부르는 쪽이 JSON 을 손으로 다시 조립하게 되고,
 // 그 조립이 이 구조체와 갈리는 순간 같은 이름이 두 모양으로 답한다.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenStep {
+    pub step: String,
+    pub took_ms: u128,
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Stats {
     /// **누구의 힙인가.** 이 값들의 절반은 저장소가 아니라 답한 프로세스의 것이다(힙 상한·
     /// SQLite 메모리 사용량·부팅 게이트·자기 로그). 그것을 안 실으면 두 프로세스의 답이 같은
@@ -319,6 +327,9 @@ pub struct Stats {
     /// 부팅 쓰기 게이트가 남긴 판정(관측면) — 게이트는 부팅 때 한 번 돌고 사라진다. 그 결과를
     /// 읽을 수 없으면 "돌았는지" 조차 확인할 수 없어, 자가치유가 있었다고 주장만 하게 된다.
     pub boot_gate: String,
+    /// 부팅 개방의 단계별 소요(ms). 비어 있으면 이 프로세스가 저장소를 안 열었다는 뜻이지
+    /// 0ms 라는 뜻이 아니다 — 안 잰 것과 0 은 다르다.
+    pub open_timings: Vec<OpenStep>,
     /// SQLite 가 스스로 남긴 최근 내부 로그 — 실패한 할당의 크기가 여기에만 있다.
     pub sqlite_log: Vec<String>,
     pub sqlite_version: String,
@@ -387,6 +398,24 @@ pub fn record_boot_gate(verdict: impl Into<String>) {
     }
 }
 
+/// 부팅 개방의 각 단계가 얼마나 걸렸는가. `data.stats` 가 답한다.
+///
+/// 개방은 여러 검사의 묶음이고 그중 하나(quick_check)는 **데이터 크기에 비례**한다. 합계만
+/// 남기면 부팅이 느려질 때 무엇이 자랐는지 못 가른다 — 재는 자리가 없으면 추정이 사실 행세를
+/// 한다(실측 2026-08-08: 106MB 저장소에서 개방 하나가 부팅의 3분의 1이었다).
+static OPEN_TIMINGS: std::sync::Mutex<Vec<(String, u128)>> = std::sync::Mutex::new(Vec::new());
+
+pub fn record_open_step(step: impl Into<String>, took_ms: u128) {
+    if let Ok(mut g) = OPEN_TIMINGS.lock() {
+        g.push((step.into(), took_ms));
+    }
+}
+
+/// 단계 이름 → 밀리초. 아무것도 안 열었으면 빈 목록이다(0 이 아니다 — 안 잰 것과 0ms 는 다르다).
+pub fn open_timings() -> Vec<(String, u128)> {
+    OPEN_TIMINGS.lock().map(|g| g.clone()).unwrap_or_default()
+}
+
 fn boot_gate_verdict() -> String {
     BOOT_GATE
         .lock()
@@ -406,6 +435,10 @@ pub fn stats(conn: &Connection, role: &str) -> Result<Stats, String> {
         role: role.to_string(),
         pid: std::process::id(),
         boot_gate: boot_gate_verdict(),
+        open_timings: open_timings()
+            .into_iter()
+            .map(|(step, took_ms)| OpenStep { step, took_ms })
+            .collect(),
         sqlite_log: recent_sqlite_log(),
         sqlite_version: version,
         soft_heap_limit: one("PRAGMA soft_heap_limit"),
@@ -425,3 +458,40 @@ pub fn stats(conn: &Connection, role: &str) -> Result<Stats, String> {
 #[cfg(test)]
 #[path = "integrity_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod stats_wire_tests {
+    use super::*;
+
+    /// 규칙 — 실황은 값으로 건너간다.
+    ///
+    /// 이 구조체는 소켓을 건너 다른 프로세스의 답이 된다. 한 필드의 타입이 JSON 으로 못 가면
+    /// **그 필드만 빠지는 것이 아니라 답 전체가 빈 객체가 된다** — 실측 2026-08-08: 필드를 하나
+    /// 더하자 `data.stats` 가 `{}` 로 답했고 사람에게는 "메모리 NaN바이트" 로 보였다. 실패가
+    /// 성공의 모양으로 나온 것이라 부르는 쪽은 성공으로 읽는다.
+    #[test]
+    fn 실황은_빈_객체로_답하지_않는다() {
+        let stats = Stats {
+            role: "test".into(),
+            pid: 1,
+            boot_gate: "ok".into(),
+            open_timings: vec![OpenStep { step: "quick_check".into(), took_ms: 12 }],
+            sqlite_log: vec![],
+            sqlite_version: "3.46.0".into(),
+            soft_heap_limit: 0,
+            hard_heap_limit: 0,
+            memory_used: 1,
+            memory_highwater: 2,
+            cache_size: -2000,
+            page_size: 4096,
+            page_count: 3,
+            freelist_count: 0,
+            records_indexes: 0,
+        };
+        let value = serde_json::to_value(&stats).expect("실황은 값으로 간다");
+        let object = value.as_object().expect("객체여야 한다");
+        assert!(!object.is_empty(), "빈 객체는 답이 아니다");
+        assert_eq!(object["memoryUsed"], serde_json::json!(1));
+        assert_eq!(object["openTimings"][0]["tookMs"], serde_json::json!(12));
+    }
+}
