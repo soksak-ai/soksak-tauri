@@ -270,6 +270,7 @@ pub fn run() {
                 // 다시 세우는 법을 **붙기 전에** 넣는다. cored 는 죽을 수 있고(판올림·강제종료·
                 // 크래시), 갈아탈 수 없으면 그 앱은 남은 수명 내내 저장소를 잃는다 — 읽기가
                 // 실패하고, 실패한 읽기를 "비어 있음"으로 적는 소비자 하나가 곧 데이터 소실이다.
+                boot.step("ring-set");
                 let handle = app.handle().clone();
                 cored_host::rebuild_with(Box::new(move || {
                     cored_host::stand_up(&handle).map(std::sync::Arc::new)
@@ -293,6 +294,7 @@ pub fn run() {
             //
             // 못 잡은 것은 실패가 아니다. 실패로 다루면 두 번째 프레임워크가 저장소를 통째로
             // 못 쓰고, 그것이 두 앱을 동시에 못 켜던 자리다.
+            boot.step("cored-stand-up");
             match data::db_path() {
                 Err(e) => eprintln!("[data] DB 경로 계산 실패: {e}"),
                 Ok(db_path) if {
