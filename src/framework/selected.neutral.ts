@@ -48,6 +48,8 @@ export const selectedFramework: AppFramework = {
     paintOwner: { provided: false, reason: "중립 테스트 어댑터에는 창 크롬이 없습니다" },
   },
   emitLocal: () => {},
+  // 중립 어댑터에는 자원 프로토콜이 없다 — 파일 주소를 그대로 준다.
+  assetUrl: (path) => `file://${path}`,
   install: async () => {},
   presentWindow: async () => {},
   // 중립 어댑터에는 화면이 없다 — 배율을 실을 자리가 없으므로 아무 일도 하지 않는다.

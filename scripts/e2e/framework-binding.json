@@ -292,6 +292,27 @@
       "note": "부팅 응답 지연 판정. 총합만이 아니라 가장 오래 걸린 단계를 이름으로 낸다."
     },
     {
+      "file": "lib/await-ledger.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "원장에 사실이 적히기를 push 통로(events.subscribe)로 기다린다. 되묻지 않는다 — 되묻기 주기는 부팅을 재는 자리에서 재는 대상만큼 큰 오차다."
+    },
+    {
+      "file": "lib/bundle-transport.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "번들이 어떤 통로로 왔는지 판정한다. 통로가 막혀도 앱은 안 죽고 느려진 채로 정상처럼 돌기 때문에, 총 시간이 아니라 도장 하나를 읽는다."
+    },
+    {
+      "file": "lib/bundle-transport.test.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "그 판정기 자신의 검사. 0/0 과 도장 없음을 통과로 읽지 않는지까지 값으로 고정한다."
+    },
+    {
       "file": "lib/browser-acceptance-frameworks.mjs",
       "role": "lib",
       "class": "A",

@@ -7,7 +7,9 @@
 // 판정이 재는 대상이다 — 그 자리가 생기면 이 되묻기도 없앤다.
 import { openClient, requireSocket } from "./lib/client.mjs";
 import { bootLatencyVerdict } from "./lib/boot-latency.mjs";
+import { bundleTransportVerdict } from "./lib/bundle-transport.mjs";
 import { awaitSocket } from "./lib/await-socket.mjs";
+import { awaitBootStep } from "./lib/await-ledger.mjs";
 
 const startedAtUnixMs = Number(process.env.BOOT_STARTED_AT_UNIX_MS);
 if (!Number.isFinite(startedAtUnixMs)) {
@@ -30,7 +32,18 @@ const rpc = (method, params = {}) => client.rpc(method, params);
 const answer = await rpc("window.list", {}).catch((err) => ({ ok: false, message: String(err) }));
 const respondedAtUnixMs = answer?.ok === true ? Date.now() : null;
 
-const ledger = await rpc("activity.recent", { limit: 40 }).catch(() => null);
+// 번들 도장은 **워크스페이스 창의 플러그인 부팅**이 찍는다. 컨트롤 플레인(main)에는 플러그인이
+// 없고, 워크스페이스 부팅 위상(app.boot.wait)은 플러그인 본문보다 **먼저** 준비가 된다 — 그
+// 둘 중 어느 것을 기다려도 도장 없이 원장을 읽는다(실측 2026-08-08: 두 번 다 blocked).
+// 기다릴 사실은 플러그인 부팅 자체이고, 그 자리가 이제 이름을 가졌다. 첫 응답 시각은 이미
+// 찍은 **뒤**라 이 기다림이 계측을 늘리지 않는다.
+// 냉시동 500ms 시점에는 워크스페이스 창이 **아직 없다**(실측 2026-08-08: 그때 목록에는 main
+// 하나뿐이라 기다릴 대상을 못 찾고 원장을 그냥 읽었다). 창이 서기를 되물어 확인하면 그 주기가
+// 곧 오차이고, 이 하니스가 재는 대상이 바로 그 크기의 시간이다.
+//
+// 그래서 원장의 push 통로로 그 도장이 적히기를 기다린다 — 흘러온 것을 받는다.
+const stamped = await awaitBootStep(socket, "plugins:prefetched:", 60_000);
+const ledger = await rpc("activity.recent", { limit: 400 }).catch(() => null);
 const steps = (ledger?.ok === true ? (ledger.data?.entries ?? []) : [])
   .filter((row) => row?.kind === "boot.step")
   // 도장이 자기 시각을 싣고 있으면 그것을 쓴다 — 원장에 실린 시각은 **적힌 때**라, 모아
@@ -39,10 +52,18 @@ const steps = (ledger?.ok === true ? (ledger.data?.entries ?? []) : [])
   .sort((left, right) => left.atUnixMs - right.atUnixMs);
 
 const verdict = bootLatencyVerdict({ startedAtUnixMs, respondedAtUnixMs, steps });
+// 번들이 **어떻게 왔는가**는 따로 판정한다 — 총 시간만 보면 통로가 막힌 부팅과 그냥 느린
+// 부팅을 못 가른다. 통로가 막혀도 앱은 죽지 않고 느려진 채로 정상처럼 돈다.
+const bundles = bundleTransportVerdict({ steps });
 // 못 답한 이유를 삼키지 않는다 — 없는 값(null)만 남기면 "왜" 가 사라진다.
 const refusal = answer?.ok === true ? null : `첫 물음이 실패했다: ${answer?.code ?? "?"} ${answer?.message ?? ""}`.trim();
 const detail = [...verdict.evidence, verdict.reason, refusal].filter(Boolean).join(" · ");
 console.log(`◉ boot latency ${verdict.status}${detail ? ` — ${detail}` : ""}`);
+// 무엇을 기다렸는지 함께 낸다 — 판정이 막혔을 때 "안 기다렸다" 와 "기다렸는데 없다" 는 고칠
+// 자리가 다르다.
+const waited = `stamped=${stamped === null ? "못 봤다(상한)" : "봤다"}`;
+const bundleDetail = [...bundles.evidence, bundles.reason, waited].filter(Boolean).join(" · ");
+console.log(`◉ bundle transport ${bundles.status}${bundleDetail ? ` — ${bundleDetail}` : ""}`);
 for (const row of steps) console.log(`   ${row.step} @+${row.atUnixMs - startedAtUnixMs}ms`);
 await client.close?.().catch?.(() => {});
-process.exitCode = verdict.status === "green" ? 0 : 1;
+process.exitCode = verdict.status === "green" && bundles.status === "green" ? 0 : 1;

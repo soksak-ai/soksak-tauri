@@ -696,7 +696,6 @@ pub fn run() {
             schedule::schedule_list,
             fs::list_children,
             fs::read_text_file,
-            fs::read_text_files,
             fs::write_text_file,
             fs::write_file_base64,
             fs::read_file_base64,

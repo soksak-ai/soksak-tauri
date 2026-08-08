@@ -89,6 +89,8 @@ pub fn admit(db_path: &str, kind: &str, source: &str, payload: Value) -> Result<
     let entry = led.admit(now_ms(), kind, source, payload);
     drop(all); // 쓰기 동안 원장 잠금을 쥐고 있지 않는다 — 디스크가 느리면 적재가 통째로 막힌다.
     persist(db_path, &entry)?;
+    // 남은 뒤에 민다 — 밀고 나서 쓰기가 실패하면 구독자만 아는 사실이 생긴다.
+    fan_out(&entry);
     Ok(entry)
 }
 
@@ -203,4 +205,63 @@ mod tests {
         let why = stored_last_seq(&path.to_string_lossy()).unwrap_err();
         assert!(why.contains("조회 실패"), "{why}");
     }
+}
+
+// ── 원장 구독 — 적힌 순간에 흘려보낸다 ─────────────────────────────────────────
+//
+// 부팅 뒤에 적히는 사실을 밖에서 읽으려면 그때까지 기다려야 한다. 되물어 확인하면 그 주기가
+// 곧 오차이고, 부팅을 재는 자리에서는 재는 대상만큼 큰 오차다(실측 2026-08-08: 냉시동 500ms
+// 시점에는 워크스페이스 창조차 아직 없었다).
+//
+// CLI 는 이 통로를 이미 광고하고 있었다(`sok events`). 데몬이 그 이름을 몰라서 구독 요청이
+// UNKNOWN_COMMAND 로 돌아왔고, 광고된 기능이 한 번도 동작하지 않았다.
+//
+// 구독자는 **연결**이다. 연결이 끊기면 쓰기가 실패하고, 그 자리에서 명부에서 빠진다 — 죽은
+// 소켓에 계속 쓰지 않는다.
+
+/// 구독자 하나 — 이 연결로 이 종류들을 밀어 준다. 종류가 비면 전부.
+struct Subscriber {
+    id: u64,
+    kinds: Vec<String>,
+    write: Box<dyn Fn(&str) -> bool + Send + Sync>,
+}
+
+fn subscribers() -> &'static std::sync::Mutex<Vec<Subscriber>> {
+    static SUBS: std::sync::OnceLock<std::sync::Mutex<Vec<Subscriber>>> = std::sync::OnceLock::new();
+    SUBS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+/// 이 연결을 원장 구독자로 세운다. 같은 연결이 다시 부르면 조건을 갈아끼운다 — 두 벌이 되면
+/// 같은 줄이 두 번 간다.
+pub fn subscribe(id: u64, kinds: Vec<String>, write: Box<dyn Fn(&str) -> bool + Send + Sync>) {
+    let mut subs = subscribers().lock().unwrap_or_else(|e| e.into_inner());
+    subs.retain(|s| s.id != id);
+    subs.push(Subscriber { id, kinds, write });
+}
+
+/// 이 연결의 구독을 끝낸다 — 연결이 끝나면 함께 끝난다.
+pub fn unsubscribe(id: u64) {
+    let mut subs = subscribers().lock().unwrap_or_else(|e| e.into_inner());
+    subs.retain(|s| s.id != id);
+}
+
+/// 지금 구독 중인 연결 수 — 관측면(누가 듣고 있는지 셀 수 없으면 "아무도 안 받았다"가 안 보인다).
+pub fn subscriber_count() -> usize {
+    subscribers().lock().unwrap_or_else(|e| e.into_inner()).len()
+}
+
+/// 적힌 항목 하나를 구독자에게 민다. 쓰기가 실패한 연결은 그 자리에서 명부에서 빠진다.
+///
+/// **남은 뒤에만 부른다.** 부르는 자리가 `persist(...)?` 바로 다음이라, 쓰기가 실패하면 그
+/// 물음표가 먼저 돌아간다 — 구독자만 아는 사실은 생길 수 없다(검사가 아니라 구조가 막는다).
+pub(crate) fn fan_out(entry: &serde_json::Value) {
+    let kind = entry.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+    let line = entry.to_string();
+    let mut subs = subscribers().lock().unwrap_or_else(|e| e.into_inner());
+    subs.retain(|s| {
+        if !s.kinds.is_empty() && !s.kinds.iter().any(|k| k == kind) {
+            return true;
+        }
+        (s.write)(&line)
+    });
 }

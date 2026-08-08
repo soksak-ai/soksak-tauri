@@ -268,6 +268,9 @@ export const titlebarComposition: TitlebarCompositionProvision = {
 };
 
 export const electronFramework: AppFramework = {
+  // 이쪽 렌더러는 파일을 그대로 가리킬 수 있다 — 경로에 담기는 글자를 그대로 쓰면 공백·한글이
+  // 든 경로가 조용히 다른 파일을 가리키므로 각 조각을 인코딩한다.
+  assetUrl: (path) => `file://${path.split("/").map(encodeURIComponent).join("/")}`,
   emitLocal: (event, payload) => {
     for (const cb of localBus.get(event) ?? []) cb(payload);
   },

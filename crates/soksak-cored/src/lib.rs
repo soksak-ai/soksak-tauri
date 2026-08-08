@@ -12,6 +12,8 @@ pub mod ctx;
 pub mod pty;
 pub mod streams;
 pub mod ledger;
+#[cfg(test)]
+mod ledger_subscribe_tests;
 pub mod registry;
 pub mod registry_clipboard;
 // 명령 표 — 선언만 산다(몸은 registry.rs).

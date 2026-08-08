@@ -144,7 +144,9 @@ fn audited_refusal(method: &str) -> Option<(&'static str, String)> {
 ///
 /// 선언은 요청이 아니라 **이 연결이 무엇인가**라서, 읽은 자리에서 즉시 서는 것이 옳다.
 pub fn declares_connection(method: &str) -> bool {
-    matches!(method, "control_bridge_attach" | "control_host_attach")
+    // 구독도 **이 연결이 무엇인가**의 선언이다 — 요청 하나가 아니라 이 연결이 이제부터 원장을
+    // 받는다는 사실이라, 읽은 자리에서 즉시 서야 그 뒤에 적히는 것을 하나도 안 놓친다.
+    matches!(method, "control_bridge_attach" | "control_host_attach" | "events.subscribe")
 }
 
 /// 한 줄을 읽어 선언이면 그 자리에서 세우고 답을 돌려준다. 선언이 아니면 None — 부른 쪽이
@@ -170,6 +172,32 @@ type ConnRef<'a> = Option<&'a ()>;
 fn route(ctx: &Ctx, req: &Request, line: &str, conn: ConnRef<'_>) -> Value {
     if req.method == "cored.commands" {
         return ok_reply(registry::declaration());
+    }
+    #[cfg(unix)]
+    if req.method == "events.subscribe" {
+        let Some(c) = conn else {
+            return err_reply(
+                "NO_CONNECTION",
+                "events.subscribe 는 연결이 있어야 합니다 — 밀어 줄 자리가 없습니다",
+            );
+        };
+        let kinds: Vec<String> = req
+            .params
+            .get("kinds")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        let sink = std::sync::Arc::clone(c);
+        crate::ledger::subscribe(
+            c.id(),
+            kinds.clone(),
+            Box::new(move |line| sink.write_line(line)),
+        );
+        return ok_reply(serde_json::json!({
+            "subscribed": true,
+            "kinds": kinds,
+            "subscribers": crate::ledger::subscriber_count(),
+        }));
     }
     let Some(cmd) = registry::find(&req.method) else {
         // 창의 다리로 온 것은 창으로 되돌리지 않는다 — 물어본 그 창에 배달되어 상한까지 침묵한다.
@@ -287,6 +315,7 @@ impl Conn {
     /// 배달은 실패가 아니라 **상한까지 침묵**으로 나타난다(쓰기는 성공하고 답이 없다).
     pub fn release(&self) {
         crate::control::detach_host(self.id);
+        crate::ledger::unsubscribe(self.id);
         let mut v = self.owned.lock().unwrap_or_else(|e| e.into_inner());
         crate::streams::release_all(&v);
         v.clear();

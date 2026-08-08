@@ -60,6 +60,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src/commands/catalogSettings.ts", mark: "await sleep(applyAtMs);", event: "caller-specified", why: "applyAtMs 파라미터" },
   { file: "src/commands/catalogDebug.ts", mark: "const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));", event: "caller-specified", why: "debug.sleep — 대기 자체가 명령의 기능" },
   { file: "src/commands/catalogDebug.ts", mark: "await sleep(ms);", event: "caller-specified", why: "debug.sleep 본체" },
+  { file: "src/commands/executor.ts", mark: "const timer = setTimeout(", event: "caller-specified", why: "plugin.boot.wait 상한 — 얼마나 기다릴지는 부른 쪽이 timeoutMs 로 발화한다. 기다림 자체는 사건(hostReadyGate)으로 끝나고, 이 타이머는 못 기다린 사실을 이름으로 답하는 자리다" },
   { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(() => focusTrace.focusTraceStop?.(), ms)", event: "caller-specified", why: "focus trace 자동 종료 ms — 호출자 지정" },
   { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(resolve, durationMs / steps)", event: "caller-specified", why: "드래그 durationMs/steps — 호출자 지정" },
   { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(resolve, recordLeadMs)", event: "caller-specified", why: "드래그 녹화의 선행 프레임 구간 — 호출자가 recordLeadMs로 발화" },

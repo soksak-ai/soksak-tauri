@@ -40,6 +40,11 @@ const invoke = vi.fn(async (cmd: string, args?: { path?: string }) => {
   }
   return undefined;
 });
+// 번들은 **엔진의 자원 경로**로 온다(IPC 를 안 지난다) — 픽스처도 그 길로 답한다.
+// 매니페스트는 여전히 IPC 로 읽는다(경로 판정을 지나야 하므로). 두 통로가 다르다는 것이
+// 이 파일의 사실이고, 한 통로로 뭉뚱그리면 검사가 실제와 다른 세계를 잰다.
+vi.stubGlobal("fetch", async (url: string) =>
+  new Response(String(url).endsWith("/plugin.json") ? JSON.stringify(onDisk) : "export const activate = () => {};"));
 vi.mock("../framework", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../framework")>()),
   invoke: (...a: unknown[]) => invoke(...(a as [string, { path?: string }])),

@@ -1142,23 +1142,11 @@ struct ReadText {
     offset: Option<u64>,
 }
 
-/// 여럿을 한 번에 읽는다 — 왕복이 곧 기다림이다(fsx::read_text_files 머리말).
-pub(crate) fn run_read_text_files(ctx: &Ctx, params: &Value) -> Outcome {
-    dispatch(params, |a: ReadTexts| {
-        Ok::<_, String>(fsx::read_text_files(&a.paths, ctx.user_home()))
-    })
-}
 
 pub(crate) fn run_read_text_file(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: ReadText| {
         fsx::read_text_file(&a.path, a.offset, ctx.user_home())
     })
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ReadTexts {
-    paths: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]

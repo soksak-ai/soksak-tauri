@@ -6,7 +6,7 @@
 
 import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
-import { invoke } from "../framework";
+import { assetUrl, invoke } from "../framework";
 import { bootFactPayload } from "../lib/bootFact";
 import { createCoreSync } from "./coreSync";
 import type { CoreStoreDeps } from "./coreStore";
@@ -457,9 +457,7 @@ export const usePlugins = moduleState("state/plugins#store", () =>
     const prefetched = prefetchedSources.get(p.manifest.id);
     const data = prefetched !== undefined
       ? { content: prefetched }
-      : await invoke<{ content: string }>("read_text_file", {
-          path: `${p.dir}/${p.manifest.entry}`,
-        });
+      : { content: await (await fetch(assetUrl(`${p.dir}/${p.manifest.entry}`))).text() };
     if (prefetched === undefined) {
       reloadStep(`read:${p.manifest.id}:${Math.round(performance.now() - readStart)}ms:${data.content.length}b`);
     }
@@ -619,28 +617,44 @@ export const usePlugins = moduleState("state/plugins#store", () =>
         }
         ready.push(id);
       }
-      // 번들을 **한 번에** 읽어 둔다 — 왕복 수가 곧 기다림이다. 실측 2026-08-08: 34 건을
-      // 각각 물었더니 29 건이 한 통로로 몰려 각자 800ms 를 줄서 기다렸다(소요합 12,028ms,
-      // 벽시계 935ms). 크기와 무관했다 — 83KB 가 818ms, 1.7MB 가 778ms.
-      // 실패는 파일마다 따로 실리므로 하나가 없어도 나머지는 그대로 적재된다.
+      // 번들은 **웹뷰가 직접 가져온다.**
+      //
+      // 옮기는 양이 곧 기다림이다. 실측 2026-08-08: 34 건을 한 호출로 묶어도 818ms 가 그대로
+      // 남았다 — 왕복 수가 아니라 양이 값이었다(23.8MB 중 약 15MB 가 프로세스 경계를 문자열로
+      // 건넜다). 엔진은 같은 파일을 자기 자원 적재 경로로 읽고, 그 길에는 직렬화가 없다.
+      //
+      // 실패는 파일마다 따로 남는다 — 하나가 없어도 나머지는 그대로 적재된다. 못 읽음을
+      // "내용이 없다" 로 읽으면 플러그인이 통째로 죽으므로, 못 읽은 것은 담지 않는다.
       const prefetchAt = performance.now();
       const wanted = ready
         .map((id) => get().plugins[id])
         .filter((p): p is PluginRuntime => !!p && p.manifest.entry !== null)
         .map((p) => ({ id: p.manifest.id, path: `${p.dir}/${p.manifest.entry}` }));
-      // 못 읽으면 빈 목록이다 — 그러면 활성화가 자기 것을 하나씩 읽는다(예전 경로 그대로).
-      // 못 읽음을 "내용이 없다" 로 읽으면 플러그인이 통째로 죽는다.
-      const fetched =
-        wanted.length === 0
-          ? []
-          : (await invoke<{ path: string; content?: string }[] | null>("read_text_files", {
-              paths: wanted.map((w) => w.path),
-            }).catch(() => null)) ?? [];
+      // 읽었거나 못 읽었거나 — 둘은 **다른 모양**이다. 못 읽음을 빈 내용으로 표현하면 플러그인이
+      // 통째로 죽고, 그 죽음이 "번들이 비어 있었다" 로 보인다.
+      type Bundle = { id: string; content: string } | { id: string; why: string };
+      const fetched: Bundle[] = await Promise.all(
+        wanted.map(async (w): Promise<Bundle> => {
+          try {
+            const res = await fetch(assetUrl(w.path));
+            if (!res.ok) return { id: w.id, why: `HTTP ${res.status}` };
+            return { id: w.id, content: await res.text() };
+          } catch (error) {
+            return { id: w.id, why: error instanceof Error ? error.message : String(error) };
+          }
+        }),
+      );
       const sources = prefetchedSources;
       sources.clear();
-      for (const [i, row] of fetched.entries()) {
-        const w = wanted[i];
-        if (w && typeof row?.content === "string") sources.set(w.id, row.content);
+      for (const row of fetched) {
+        if ("content" in row) sources.set(row.id, row.content);
+      }
+      // 못 읽은 것은 **이유와 함께** 남긴다. 0 만 남으면 통로가 막힌 것인지 파일이 없는 것인지
+      // 알 수 없고, 그 사이에 활성화가 하나씩 자기 것을 읽어 느려진 채로 조용히 돈다.
+      const failed = fetched.filter((row): row is { id: string; why: string } => "why" in row);
+      const firstFailure = failed[0];
+      if (firstFailure) {
+        reloadStep(`prefetch-failed:${failed.length}:${firstFailure.why.slice(0, 80)}`);
       }
       reloadStep(`prefetched:${sources.size}/${wanted.length}:${Math.round(performance.now() - prefetchAt)}ms`);
       // 계측(boot.step) — 부트 병목의 실체는 플러그인별 활성화 시간이다(복원 300ms 기준).

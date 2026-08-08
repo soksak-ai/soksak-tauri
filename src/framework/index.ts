@@ -97,3 +97,4 @@ export const frameworkName: string = framework.name;
 /** 이 창의 구독자에게 사건을 직접 배달한다 — 이름·페이로드는 프레임워크가 뿌리는 것과 같다. */
 export const emitLocal: AppFramework["emitLocal"] = (event, payload) =>
   framework.emitLocal(event, payload);
+export const assetUrl: AppFramework["assetUrl"] = (path) => framework.assetUrl(path);

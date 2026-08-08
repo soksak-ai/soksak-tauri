@@ -235,3 +235,26 @@ Evidence (2026-06 investigation, URLs verified):
 
 Code anchor: renderer selection lives in the terminal plugin
 (soksak-plugin-terminal-xterm, `src/terminal.ts` `xtermRenderer`).
+
+## Plugin bundles do not cross the process boundary
+
+What a boot waits on is how much it moves, not how many times it asks. Measured 2026-08-08: 34
+plugin bundles read one at a time took 935ms wall clock; batching all 34 into a single call still
+took 818ms. Nothing improved, because roughly 15MB of the 23.8MB was being serialized into JSON and
+handed across the process boundary either way.
+
+The engine can read those files through its own asset path, and that path has no serialization. The
+framework contract answers `assetUrl(path)` — each framework knows how to name a file for its own
+engine, and the core just fetches it. The IPC command that carried bundles is gone; nothing keeps a
+second route alive.
+
+Measured after: **34/34 bundles in 40ms** — the same files, the same boot.
+
+Manifests (`plugin.json`) still go through IPC. They are a few KB, and that read passes the path
+verdict (`expand` + `project_root_verdict`) which dev-load depends on for arbitrary user paths.
+Where size is not the cost, there is no reason to give up the check.
+
+`make boot-latency` judges this mechanically. It reads one stamp — `plugins:prefetched:<got>/<wanted>:<ms>`
+— and is red when any bundle failed to arrive or the transport exceeds its budget. A blocked route
+does not kill the app: activation falls back to reading each file, so boot merely gets slower and
+still looks normal. Counting the stamp is what makes that regression visible.

@@ -59,6 +59,30 @@ export function markCommandHostReady(): void {
   ms.resolveFrameworkReady?.();
 }
 
+/**
+ * 플러그인 부팅이 끝났는지 **밖에서** 기다린다.
+ *
+ * 워크스페이스 부팅 위상이 준비라고 답해도 플러그인 본문은 아직 돈다 — 두 사실은 다른 것이고,
+ * 다른 것을 같은 이름으로 물으면 그 뒤에 찍히는 도장을 못 보고 "잰 적 없음" 이 된다(실측
+ * 2026-08-08). 되묻지 않는다: 이미 지난 사실이면 즉시, 아니면 그 사건에 걸린다.
+ *
+ * 상한을 넘기면 거절한다. 못 기다린 것을 "준비됐다" 로 답하면 부르는 쪽이 없는 사실 위에서
+ * 판정한다.
+ */
+export function awaitCommandHostReady(timeoutMs: number): Promise<{ ready: true }> {
+  if (ms.hostReady) return Promise.resolve({ ready: true as const });
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`플러그인 부팅이 ${timeoutMs}ms 안에 끝나지 않았습니다`)),
+      timeoutMs,
+    );
+    void hostReadyGate.then(() => {
+      clearTimeout(timer);
+      resolve({ ready: true as const });
+    });
+  });
+}
+
 export function startExecutor(): void {
   if (boot.started) return;
   // 명령 수신이 열리기까지 실측 10 초가 걸렸는데 그 구간을 재는 자리가 없었다(2026-08-08).

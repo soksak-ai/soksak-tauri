@@ -1308,13 +1308,6 @@ pub const COMMANDS: &[Command] = &[
     // 파일 읽기·쓰기 — 디스크는 프레임워크가 아니다. 창도 앱 핸들도 없이 같은 답이 나온다.
     // 홈이 필요한 것들(`~` 확장·트리 기본 뿌리·루트 판정)은 **사용자 홈**을 부팅 상태에서
     // 본다. 정체성 홈이 아니다 — 둘을 바꿔 쓰면 트리가 앱 관리 폴더에서 시작한다.
-    // 여럿을 한 번에 — 왕복 수가 곧 기다림이다(플러그인 적재 34 건이 각자 800ms 를 줄서 기다렸다).
-    Command {
-        name: "read_text_files",
-        args: &[Arg { name: "paths", ty: "string[]", required: REQ }],
-        returns: "{ path, content?, error?, truncated, totalBytes }[] — 물은 순서 그대로",
-        run: run_read_text_files,
-    },
     Command {
         name: "read_text_file",
         args: &[

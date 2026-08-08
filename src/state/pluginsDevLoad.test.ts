@@ -46,6 +46,8 @@ const invoke = vi.fn(async (cmd: string, args?: { path?: string }) => {
   }
   return undefined;
 });
+// 번들은 **엔진의 자원 경로**로 온다(IPC 를 안 지난다) — 픽스처도 그 길로 답한다.
+vi.stubGlobal("fetch", async () => new Response("export const activate = () => {};"));
 vi.mock("../framework", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../framework")>()),
   invoke: (...a: unknown[]) => invoke(...(a as [string, { path?: string }])),

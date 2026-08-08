@@ -9,7 +9,7 @@ import type { EngineProvision } from "@soksak-ai/plugin-spec";
 // 프레임워크마다 달라지면 그 자체가 프레임워크 종속이다). 유일한 예외는 프레임워크 SDK 의 결함 흡수이며,
 // 흡수할 때는 그 결함을 주석으로 남긴다.
 
-import { invoke as tauriInvoke, Channel } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke, Channel, convertFileSrc } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import {
   getCurrentWindow,
@@ -133,6 +133,8 @@ export const titlebarComposition: TitlebarCompositionProvision = {
 
 export const tauriFramework: AppFramework = {
   // Tauri 는 자기 통로가 있다 — 현재 창으로 보내면 그 창의 listen 이 받는다.
+  // 자원 프로토콜로 준다 — 그 길에는 직렬화가 없다.
+  assetUrl: (path) => convertFileSrc(path),
   emitLocal: (event, payload) => {
     void getCurrentWebviewWindow().emit(event, payload);
   },
