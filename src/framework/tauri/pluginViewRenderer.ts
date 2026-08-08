@@ -121,6 +121,18 @@ function observeSlots(): void {
 new MutationObserver(observeSlots).observe(document.documentElement, { childList: true, subtree: true });
 window.addEventListener("resize", reportSlots);
 
+// 투영이 따라가야 할 사건들 — 자리(resize)만 듣고 나머지를 빼면 관측면이 **옛 값을 답한다.**
+// 실측 2026-08-08: 주소줄에 글자가 들어갔는데 관측은 이전 URL 을, 포커스는 이전 상태를
+// 답했다. 관측이 거짓말하면 그 위에 세운 판단이 전부 틀린다.
+//   input/change — 값이 바뀐다
+//   focusin/focusout — 이 realm 안에서 활성 요소가 옮겨간다
+//   focus/blur(window) — 이 문서가 키보드를 받는지가 바뀐다
+for (const name of ["input", "change", "focusin", "focusout"]) {
+  document.addEventListener(name, reportSlots, true);
+}
+window.addEventListener("focus", reportSlots);
+window.addEventListener("blur", reportSlots);
+
 await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
   // 이 문서에는 앱 스타일시트가 없다 — 테마 변수를 먼저 걸어야 이 안에서 그리는 것이 값을
   // 얻는다. 그리기 전에 건다: 뒤에 걸면 첫 프레임이 값 없는 색으로 나간다.
