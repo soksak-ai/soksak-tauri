@@ -60,6 +60,8 @@ export interface PluginViewInit {
   label: string | null;
   locale: string;
   settings: Record<string, unknown>;
+  /** 앱 루트가 든 테마 커스텀 속성 — 이 realm 에는 앱 스타일시트가 없으므로 값으로 건넨다. */
+  theme: Record<string, string>;
   project: { id: string; root: string | null } | null;
   sidecarAvailable: boolean;
   webviewCapabilities: Record<string, boolean> | null;

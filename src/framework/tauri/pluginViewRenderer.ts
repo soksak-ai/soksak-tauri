@@ -1,4 +1,5 @@
 import { emitTo, listen } from "@tauri-apps/api/event";
+import { applyTheme } from "./pluginViewTheme";
 import type {
   PluginViewInit,
   PluginViewNodeFrame,
@@ -120,6 +121,9 @@ document.addEventListener("input", reportSlots, true);
 document.addEventListener("change", reportSlots, true);
 
 await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
+  // 이 문서에는 앱 스타일시트가 없다 — 테마 변수를 먼저 걸어야 이 안에서 그리는 것이 값을
+  // 얻는다. 그리기 전에 건다: 뒤에 걸면 첫 프레임이 값 없는 색으로 나간다.
+  applyTheme(document, init.theme);
   activeLabel = init.label;
   const subscriptions: { dispose(): void }[] = [];
   // 활성 실패가 준비의 부재인지 아닌지는 이 수가 정한다 — 등록을 마친 뒤 죽은 플러그인의

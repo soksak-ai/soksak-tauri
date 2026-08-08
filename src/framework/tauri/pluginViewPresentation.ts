@@ -2,6 +2,7 @@ import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
 import { presentationNowUnixMs } from "../../lib/presentationClock";
+import { themeCustomProperties } from "./pluginViewTheme";
 import type { ExternalSurfaceTransitionTiming } from "../../lib/externalSurfaceTransition";
 import { currentWindowLabel } from "../../lib/webviewLabels";
 import type { LayoutMove, PreparedLayoutTransition } from "../../lib/layoutTransitionHost";
@@ -598,6 +599,8 @@ async function createPresentedView(
       label: input.context.viewId ? app.webview?.label(input.context.viewId) ?? null : null,
       locale: app.locale(),
       settings: app.settings.all(),
+      // 테마는 코어의 사실이다 — 이 realm 에는 앱 스타일시트가 없으니 값으로 건넨다.
+      theme: themeCustomProperties(document),
       project: app.project.current(),
       sidecarAvailable: !!app.sidecar,
       webviewCapabilities: app.webview?.capabilities ?? null,
