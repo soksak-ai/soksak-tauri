@@ -508,3 +508,19 @@ sidecar-browser-chromium-archive: sidecar-browser-chromium ## 배포 아카이�
 	bash scripts/release/archive-regular-files.sh "$$root/dist" "$$out"; \
 	echo "아카이브: $$out"; \
 	shasum -a 256 "$$out" | awk '{print "sha256: "$$1}'
+
+.PHONY: boot-latency
+boot-latency: ## 앱이 첫 명령에 답하기까지를 잰다(냉시동 — 지금 뜬 판을 끄고 새로 띄운다)
+	@test -x "$(DEV_EXECUTABLE)" -a -x "$(DEV_CLI)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
+	@CLI="$(DEV_CLI)"; SOCKET="$(DEV_HOST_SOCKET)"; \
+	old_pid="$$(lsof -t "$$SOCKET" 2>/dev/null | head -n 1)"; \
+	if [ -n "$$old_pid" ]; then \
+	  "$$CLI" app.quit >/dev/null 2>&1 || true; \
+	  for _ in $$(seq 1 100); do kill -0 "$$old_pid" 2>/dev/null || break; sleep 0.1; done; \
+	fi; \
+	strays="$$(pgrep -f "$(DEV_EXECUTABLE)" 2>/dev/null || true)"; \
+	for stray in $$strays; do kill "$$stray" 2>/dev/null || true; done; \
+	for _ in $$(seq 1 50); do pgrep -f "$(DEV_EXECUTABLE)" >/dev/null 2>&1 || break; sleep 0.1; done; \
+	started="$$(node -e 'process.stdout.write(String(Date.now()))')"; \
+	$(MAKE) --no-print-directory run-dev >/dev/null; \
+	SOKSAK_SOCKET="$$SOCKET" BOOT_STARTED_AT_UNIX_MS="$$started" node scripts/e2e/boot-latency.mjs

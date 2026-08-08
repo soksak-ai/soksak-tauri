@@ -103,7 +103,7 @@ export function startExecutor(): void {
   // 있다. 배달 쪽은 무엇이 이미 실행됐는지 모르므로 여기가 유일한 판정 자리다(부수효과는
   // 두 번 일어나면 되돌릴 수 없다).
   const served = new Set<number>();
-  listenThisWindow<CmdRequest>("cmd-request", async (e) => {
+  const subscription = listenThisWindow<CmdRequest>("cmd-request", async (e) => {
     const { id, method, params, pane, window, parent, origin } = e.payload;
     if (served.has(id)) return;
     served.add(id);
@@ -129,11 +129,17 @@ export function startExecutor(): void {
       (err) => console.error("cmd_result 회신 실패:", err),
     );
   });
-  executorStep("listener-installed");
   // 리스너가 서기 전에 온 배달을 회수한다. `emit_to` 는 창이 있으면 성공하므로 그 사건은
   // 조용히 사라지고, 보낸 쪽은 답 상한(10s)까지 기다린다 — 실측 2026-08-08: 부팅 11.7 초 중
-  // 9.4 초가 첫 명령 한 건의 상한이었다. 답을 기다리지 않는다(회수는 곧바로 돌아온다).
-  void frameworkInvoke("cmd_listener_ready", { window: currentWindowLabel() })
-    .catch(() => {});
-  executorStep("pending-drained");
+  // 9.4 초가 첫 명령 한 건의 상한이었다.
+  //
+  // **정말 듣기 시작한 뒤에** 알린다. 등록을 시작한 직후에 알리면 회수한 봉투도 아직 없는
+  // 리스너에게 가서 똑같이 사라진다(실측: 회수 1건, 그래도 그 명령은 10.002 초에 TIMEOUT).
+  void subscription.ready.then(async () => {
+    executorStep("listener-installed");
+    const resent = await frameworkInvoke<number>("cmd_listener_ready", {
+      window: currentWindowLabel(),
+    }).catch((err) => `실패:${String(err)}`);
+    executorStep(`pending-drained:${resent}`);
+  });
 }
