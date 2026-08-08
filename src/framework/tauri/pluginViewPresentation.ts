@@ -331,6 +331,9 @@ export function projectPluginViewNode(
   // 주소는 노드가 **사는** realm 을 가리킨다 — 콘텐츠 표면 이름으로 지으면 조작이 노드 없는
   // 문서로 간다.
   element.dataset.node = `tauri/plugin-view/${frame.realm}/${frame.node}`;
+  // 포커스는 관측면의 사실이다 — 호스트에서 읽을 수 있어야 "안 들어간다" 를 값으로 말한다.
+  element.dataset.focused = String(frame.focused);
+  element.dataset.realmFocused = String(frame.realmFocused);
   if (frame.control) {
     element.dataset.formControl = frame.control.kind;
     element.dataset.formValue = frame.control.value;

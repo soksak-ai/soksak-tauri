@@ -760,7 +760,7 @@ export function registerDomCatalog(): void {
     triggers: { ko: "키보드 포커스 소유자 활성 뷰 포커스 상태 창키 커서" },
     params: {},
     returns:
-      "{ requestedTabId, mounted, delivered, activeTabId, settled, windowFocused, activeElement:{ tag, dataNode, className, ancestors } }",
+      "{ requestedTabId, mounted, delivered, activeTabId, realms:[{ realm, focused, node }], settled, windowFocused, activeElement:{ tag, dataNode, className, ancestors } }",
     message: (d) =>
       tmsg("msg.ui.focus.state", {
         view: String(d.activeTabId ?? "none"),
@@ -782,11 +782,27 @@ export function registerDomCatalog(): void {
         ancestors.push({ tag: el.tagName.toLowerCase(), className: el.className });
         if (el === host) break;
       }
+      // 자식 realm 의 포커스 — 호스트 문서만 보면 이 사실이 안 보인다. 투영이 실어 온 값을
+      // 그대로 낸다(호스트가 지어내지 않는다). 브라우저처럼 크롬이 자식 문서에 사는 뷰는
+      // "글자가 안 들어간다" 가 여기서 값으로 드러난다.
+      const realms = [...document.querySelectorAll<HTMLElement>("[data-realm-focused]")].reduce(
+        (rows, el) => {
+          const declared = el.dataset.node ?? "";
+          const m = /^[^/]+\/plugin-view\/([^/]+)\/(.+)$/.exec(declared);
+          if (!m) return rows;
+          const row = rows.find((r) => r.realm === m[1])
+            ?? (rows.push({ realm: m[1], focused: el.dataset.realmFocused === "true", node: null as string | null }), rows[rows.length - 1]);
+          if (el.dataset.focused === "true") row.node = m[2];
+          return rows;
+        },
+        [] as { realm: string; focused: boolean; node: string | null }[],
+      );
       return {
         requestedTabId: request.requestedViewId,
         mounted: request.mounted,
         delivered: request.delivered,
         activeTabId,
+        realms,
         settled:
           request.delivered && request.requestedViewId === activeTabId,
         // 창이 key 가 아니면 위젯은 포커스 표식을 안 그린다 — settled 와 독립 축.

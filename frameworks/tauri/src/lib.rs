@@ -64,21 +64,28 @@ use watcher::FsWatcher;
 
 // 앱 자기 활성화: JS setFocus 는 창을 key 로 만들 뿐 앱을 전면으로 못 가져온다
 // (macOS 포커스 탈취 방지). 자기 자신의 활성화는 허용되므로 NSApp 으로 수행.
+// **창을 인자로 받지 않는다.** 앱 활성화는 앱의 일이고, 부르는 렌더러가 창인지 그 안의
+// 웹뷰인지와 상관이 없다. 창을 요구하면 워크스페이스 창의 주 렌더러(웹뷰)가 부를 때
+// 프레임워크가 거절한다 — 실측 2026-08-08: `current webview is not a WebviewWindow` 로
+// `window.focus` 가 죽었고, 포커스가 없으니 그 창의 자식 웹뷰는 사람이 타이핑해도 안 받았다.
 #[tauri::command]
-fn window_activate(window: tauri::WebviewWindow) {
+fn window_activate(app: tauri::AppHandle) {
     #[cfg(target_os = "macos")]
     {
-        let _ = window.run_on_main_thread(|| {
+        let _ = app.run_on_main_thread(|| {
             use objc2::MainThreadMarker;
             use objc2_app_kit::NSApplication;
             if let Some(mtm) = MainThreadMarker::new() {
-                #[allow(deprecated)]
-                NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+                // `activateIgnoringOtherApps:` 는 폐기됐고 최신 macOS 는 배경 앱의 그 요청을
+                // 무시한다 — 실측 2026-08-08: `window.focus` 가 성공을 답했는데 창은 키가
+                // 되지 않았고(`document.hasFocus()` 거짓), 그 창의 자식 웹뷰는 사람이
+                // 타이핑해도 글자를 못 받았다. 성공을 답한 일이 일어나지 않았다.
+                NSApplication::sharedApplication(mtm).activate();
             }
         });
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = window;
+    let _ = app;
 }
 
 // 네이티브 창 배경 = 테마 bg 단일화(레이어 원칙, webview.rs 머리말 참조): 루트

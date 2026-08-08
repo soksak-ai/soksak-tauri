@@ -88,6 +88,8 @@ function reportSlots(): void {
         // 노드는 이 문서에 산다 — 콘텐츠 표면이 아니라 여기가 주인이다. 위에서 이름 없이는
         // 시작하지 못하므로(throw) 여기서는 값이 있다.
         realm: renderer as string,
+        focused: document.activeElement === element,
+        realmFocused: document.hasFocus(),
         control: nodeControlState(element),
         x: Math.round(rect.left), y: Math.round(rect.top),
         w: Math.max(1, Math.round(rect.right) - Math.round(rect.left)),
@@ -122,6 +124,12 @@ window.addEventListener("resize", reportSlots);
 // 실제 input/change 사건에서 같은 reporter로 즉시 갱신한다(폴링 없음).
 document.addEventListener("input", reportSlots, true);
 document.addEventListener("change", reportSlots, true);
+// 포커스가 옮겨 다니는 것도 보고할 사실이다 — 안 보내면 밖에서는 "왜 글자가 안 들어가는가" 를
+// 눈으로만 말하게 된다.
+document.addEventListener("focusin", reportSlots, true);
+document.addEventListener("focusout", reportSlots, true);
+window.addEventListener("focus", reportSlots);
+window.addEventListener("blur", reportSlots);
 
 await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
   // 이 문서에는 앱 스타일시트가 없다 — 테마 변수를 먼저 걸어야 이 안에서 그리는 것이 값을

@@ -37,6 +37,8 @@ const ALLOWED = new Set([
   // ── 자식 renderer 폼 컨트롤 투영(framework/tauri/pluginViewPresentation) ──
   "data-form-control", // 투영된 폼 컨트롤 종류
   "data-form-value", // 투영된 폼 컨트롤의 현재 값
+  "data-focused", // 투영된 노드가 그 realm 의 활성 요소인가
+  "data-realm-focused", // 그 realm 의 문서가 키보드를 받는가 — 호스트만 보면 안 보이는 사실
   "data-change", // 파일트리 git 상태 축
   "data-view-addr", // 노드 스캔 baseAddress(절대 주소) — view 는 종류 축(생존 어휘)
   "data-tab-id", // 탭 인스턴스 역참조 앵커(정본 — viewHostAnchors)

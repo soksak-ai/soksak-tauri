@@ -132,6 +132,13 @@ export interface PluginViewNodeFrame extends PluginViewSlotFrame {
    * 주소 하나로 관측도 조작도 같은 문서에 닿는다(실측 2026-08-08: 콘텐츠 표면 이름으로 지은
    * 주소가 가리킨 문서에는 `[data-node]` 가 하나도 없었다). */
   realm: string;
+  /** 이 노드가 그 realm 의 활성 요소인가. */
+  focused: boolean;
+  /** 그 realm 의 문서가 키보드를 받는가(`document.hasFocus`).
+   *
+   * 호스트만 보면 이 사실이 안 보인다 — 자식 문서는 따로 포커스를 갖는다. 안 보이면 "글자가
+   * 안 들어간다" 를 눈으로만 말하게 된다. */
+  realmFocused: boolean;
   /** 노출된 form node의 실제 child-renderer 현재 상태. 좌표 projection이 값을 지어내지 않는다. */
   control: { kind: "input" | "textarea" | "select"; value: string } | null;
 }

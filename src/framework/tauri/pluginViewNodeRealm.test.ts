@@ -21,6 +21,8 @@ const read = (rel: string) => readFileSync(resolve(__dirname, rel), "utf8");
 const frame = (over: Partial<PluginViewNodeFrame> = {}): PluginViewNodeFrame => ({
   label: "b-w-1-tab-1",
   realm: "pv-w-1-2",
+  focused: false,
+  realmFocused: false,
   node: "urlbar",
   control: { kind: "input", value: "about:blank" },
   x: 4, y: 8, w: 300, h: 24, rootW: 800, rootH: 600,

@@ -188,13 +188,14 @@ export function registerWindowCatalog(): void {
       const label = windowTarget(p);
       const labels = await invoke<string[]>("window_list");
       if (!labels.includes(label)) return notFound(`창 없음: ${label}`);
-      if (label !== currentWindowLabel()) {
-        await invoke("window_focus", { label });
-        return { focused: true };
-      }
-      // setFocus 는 창을 key 로 만들 뿐 — 앱 전면 전환은 네이티브 자기 활성화로.
-      await invoke("window_activate");
-      await currentWindow().setFocus();
+      // 자기 창일 때만 앱을 전면으로 올린다 — 남의 창을 가리킨 부름이 앱을 끌어오면 그것은
+      // 포커스 탈취다.
+      if (label === currentWindowLabel()) await invoke("window_activate");
+      // 창을 키로 만드는 것은 **창의 일**이고 라벨이 그 창을 가리킨다. "지금 이 웹뷰" 로는
+      // 못 한다: 워크스페이스 창의 주 렌더러는 창이 아니라 그 안의 웹뷰라 프레임워크가
+      // 거절한다(실측 2026-08-08: `current webview is not a WebviewWindow`). 포커스가 없으면
+      // 그 창의 자식 웹뷰는 `document.hasFocus()` 가 거짓이고 사람이 타이핑해도 안 들어간다.
+      await invoke("window_focus", { label });
       return { focused: true };
     },
   });
