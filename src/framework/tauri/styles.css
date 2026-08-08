@@ -24,20 +24,11 @@
    이 판정을 소유하지 않는다. :root[data-pane-style]은 공용 DOM 본문 배경 규칙보다 구체적이다.
    선언 순서에 우연히 기대거나 !important로 강제하지 않고, 문서 밖 표면의 배경 소유권을
    선택된 Tauri 어댑터가 명시적으로 가져온다. */
-/* 구멍은 픽셀만 비우는 게 아니라 **입력도** 비운다.
-   자식 표면은 메인 DOM 웹뷰 아래에 깔린다(layer.rs 의 `Below` — 위로 올리면 사이드바·모달을
-   덮으므로 그 결정은 옳다). 그러면 그 자리의 클릭은 위에 있는 메인 웹뷰가 먼저 받고, 자식은
-   보이기만 하고 눌리지 않는다 — 실측 2026-08-08: 브라우저 세 종의 주소줄이 커서는 들어가는데
-   (프로그램 포커스) 그 문서가 키보드를 못 받았고 사람이 눌러도 아무 일도 없었다.
-   합성면이 아니므로 답은 하나다: 호스트가 그 자리를 비켜야 한다.
-   비우는 것은 구멍뿐이다 — 조상까지 비우면 그 위의 크롬·오버레이가 같이 안 눌린다. */
 :root[data-pane-style] .tab-body[data-tauri-hole-frame] {
   background: transparent;
-  pointer-events: none;
 }
 :root[data-pane-style] [data-tauri-hole="content"] {
   background: transparent;
-  pointer-events: none;
 }
 
 /* transparent 선언 콘텐츠 뷰(네이티브 자식 뷰를 셀-hole 아래로 비치게 하는 뷰)는 컨테이너
