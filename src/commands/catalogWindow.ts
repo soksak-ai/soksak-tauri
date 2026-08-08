@@ -180,8 +180,8 @@ export function registerWindowCatalog(): void {
       "Bring a window to the front and focus it. Without label, focuses the window this command runs in (clears inactive state for automation); with label, focuses that window (see window.list).",
     triggers: { ko: "창 포커스 창 활성화 창 앞으로" },
     params: { label: P.windowLabel },
-    returns: "{ focused: true }",
-    message: () => tmsg("msg.window.focus"),
+    returns: "{ focused: true, key }",
+    message: (d) => tmsg(d.key === true ? "msg.window.focus" : "msg.window.focus.notKey"),
     examples: ["window.focus", 'window.focus \'{"label":"w-<uuid>"}\''],
     errors: ["TARGET_NOT_FOUND"],
     handler: async (p) => {
@@ -196,7 +196,11 @@ export function registerWindowCatalog(): void {
       // 거절한다(실측 2026-08-08: `current webview is not a WebviewWindow`). 포커스가 없으면
       // 그 창의 자식 웹뷰는 `document.hasFocus()` 가 거짓이고 사람이 타이핑해도 안 들어간다.
       await invoke("window_focus", { label });
-      return { focused: true };
+      // **요청과 결과는 다른 사실이다.** 다른 앱이 활성이면 창을 앞으로 올려도 OS 는 키보드를
+      // 넘기지 않는다(실측 2026-08-08: 성공을 답했는데 그 창은 키가 아니었고, 그 위에서 키보드
+      // 명령이 전부 거절됐다). 부른 쪽이 그것을 알아야 다음을 판단한다.
+      const key = (await invoke<boolean>("window_is_key", { label })) === true;
+      return { focused: true, key };
     },
   });
 

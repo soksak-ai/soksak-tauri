@@ -44,6 +44,7 @@ vi.mock("../framework", async (importOriginal) => ({
 }));
 
 import { registerDomCatalog } from "./catalogDom";
+import { registerSurfaceInputProvider } from "../lib/surfaceInputProviders";
 import { catalogJson, execute, unregister } from "./registry";
 
 const VIEW = "content/view/test.v";
@@ -253,5 +254,55 @@ describe("남의 표면은 이름을 달고 거절한다", () => {
     const out = await execute("ui.input.drag", { from: addr, dx: 40 }, {});
     expect(out.ok).toBe(false);
     expect(out.code).toBe("SURFACE_INPUT_UNAVAILABLE");
+  });
+});
+
+// 표면의 주인이 따로 있으면 **그 주인에게** 간다 — 코어의 통로가 안 닿는 표면도 게스처가 된다.
+//
+// 실측 2026-08-08: 브라우저 세 종 중 프레임워크가 쥔 하나만 게스처가 됐고, 엔진 사이드카가
+// 그리는 둘은 "webview 없음" 으로 거절됐다. 코어가 그 엔진을 알아서 고치면 결합이고, 주인이
+// 스스로 답하게 하면 코어는 아무 엔진도 모른 채 배달만 한다.
+describe("표면의 주인에게 배달한다", () => {
+  it("주인이 있으면 프레임워크가 아니라 주인이 받는다", async () => {
+    const addr = mountSurface();
+    const owner = {
+      owns: (label: string) => label === "b-main-t1",
+      sendInput: vi.fn(async () => {}),
+      inputState: vi.fn(async () => ({ attached: true })),
+    };
+    const dispose = registerSurfaceInputProvider("plugin-x", owner);
+    try {
+      const out = await execute("ui.input.click", { address: addr, x: 3, y: 4 }, {});
+      expect(out.ok, JSON.stringify(out)).toBe(true);
+      expect(owner.sendInput).toHaveBeenCalledTimes(2);
+      expect(host.sendInput).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+    }
+  });
+
+  it("주인이 없으면 그대로 프레임워크가 받는다", async () => {
+    const addr = mountSurface();
+    const out = await execute("ui.input.click", { address: addr, x: 3, y: 4 }, {});
+    expect(out.ok).toBe(true);
+    expect(host.sendInput).toHaveBeenCalled();
+  });
+
+  it("끌기도 주인에게 간다 — 한 통로만 고치면 다른 게스처가 조용히 남는다", async () => {
+    const addr = mountSurface();
+    const owner = {
+      owns: () => true,
+      sendInput: vi.fn(async () => {}),
+      inputState: vi.fn(async () => ({ attached: true })),
+    };
+    const dispose = registerSurfaceInputProvider("plugin-x", owner);
+    try {
+      await execute("ui.input.dblclick", { address: addr }, {});
+      await execute("ui.input.drag", { from: addr, dx: 40, steps: 2 }, {});
+      expect(owner.sendInput.mock.calls.length).toBeGreaterThanOrEqual(8);
+      expect(host.sendInput).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+    }
   });
 });

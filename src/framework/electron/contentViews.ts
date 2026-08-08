@@ -348,6 +348,10 @@ export const domHost: ContentViewHost = {
     const getId = await onReady<() => number>(label, "getWebContentsId");
     await invoke("webview_mark_text", { id: getId(), text });
   },
+  async sendKey(label, key, modifiers) {
+    const getId = await onReady<() => number>(label, "getWebContentsId");
+    await invoke("webview_send_key", { id: getId(), key, ...modifiers });
+  },
   async inputState(label, at) {
     // 이쪽 표면은 문서 안의 태그다 — 배달을 가르는 사실도 문서의 사실이다: 그 자리가 지금
     // 문서에 있고 얼마만큼 보이는가. 게스트 자신의 상태는 그 프로세스만 안다.

@@ -814,7 +814,7 @@ function unknownCommand(name: string): CommandOutcome {
     return {
       ok: false,
       code: "REGISTRY_EMPTY",
-      message: `명령 등록부가 비어 있습니다(등록 0개) — ${name} 이전에 등록 자체가 없습니다`,
+      message: `명령이 하나도 등록되지 않았습니다(${name} 을 찾기 전에 등록 자체가 없었습니다). 창이 아직 부팅 중이면 plugin.boot.wait 뒤에 다시 부르세요`,
     };
   }
   return { ok: false, code: "UNKNOWN_COMMAND", message: `알 수 없는 명령: ${name}` };

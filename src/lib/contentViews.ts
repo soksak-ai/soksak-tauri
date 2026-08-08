@@ -107,6 +107,15 @@ export interface ContentViewHost {
    * 없으면 조합이 열린 채 남아 다음 입력이 그 위에 얹힌다.
    */
   markText(label: string, text: string): Promise<void>;
+  /**
+   * 키 하나를 표면에 넣는다 — 글자가 아니라 **키**다.
+   *
+   * 확정 문자열(`typeText`)은 편집 경로로 들어가서 Enter·Escape·화살표를 만들지 못한다. 그런
+   * 것으로만 닿는 기능(주소줄 확정, 팔레트 이동, 단축키)은 그래서 검증할 수 없었다.
+   */
+  sendKey(label: string, key: string, modifiers?: {
+    ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean;
+  }): Promise<void>;
 }
 
 /**

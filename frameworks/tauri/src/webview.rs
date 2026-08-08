@@ -174,14 +174,23 @@ pub async fn webview_mark_text(app: AppHandle, label: String, text: String) -> R
                 let _ = tx.try_send(Err("WKWebView가 창에 붙어 있지 않습니다".to_string()));
                 return;
             }
+            // 조합도 창이 키일 때만 페이지에 닿는다 — 아니면 보냈다고 답하면서 아무 일도 안 난다.
+            let is_key: bool = msg_send![&*window, isKeyWindow];
+            if !is_key {
+                let _ = tx.try_send(Err(
+                    "이 창이 키보드 포커스를 갖고 있지 않아 조합이 페이지에 닿지 않습니다. window.focus 로 그 창을 앞으로 가져온 뒤 다시 부르세요"
+                        .to_string(),
+                ));
+                return;
+            }
             let accepted: bool = msg_send![&*window, makeFirstResponder: &*wk];
             if !accepted {
-                let _ = tx.try_send(Err("child 웹뷰를 입력 responder로 지정하지 못했습니다".to_string()));
+                let _ = tx.try_send(Err("이 표면을 입력 자리로 세우지 못했습니다. 그 탭을 활성화한 뒤 다시 부르세요".to_string()));
                 return;
             }
             let responder: *mut AnyObject = msg_send![&*window, firstResponder];
             if responder.is_null() {
-                let _ = tx.try_send(Err("child 웹뷰에 포커스된 입력자가 없습니다".to_string()));
+                let _ = tx.try_send(Err("이 표면에 입력을 받을 자리가 없습니다. 먼저 그 입력 요소를 클릭하세요".to_string()));
                 return;
             }
             let marks: bool = msg_send![&*responder,
@@ -223,6 +232,193 @@ pub async fn webview_mark_text(app: AppHandle, label: String, text: String) -> R
 #[tauri::command]
 pub async fn webview_mark_text(_app: AppHandle, _label: String, _text: String) -> Result<(), String> {
     Err("webview_mark_text는 현재 macOS 구현이 필요합니다".into())
+}
+
+/// 이 창이 지금 **키보드를 받는 창인가.**
+///
+/// 창을 앞으로 올리는 요청은 성공하는데 키보드는 안 오는 경우가 있다 — 다른 앱이 활성이면 OS 가
+/// 넘기지 않는다(실측 2026-08-08: `window.focus` 가 성공을 답했는데 그 창은 키가 아니었고, 그
+/// 위에서 키보드 명령이 전부 거절됐다). 요청과 결과는 다른 사실이라 결과를 물을 자리가 있어야 한다.
+#[tauri::command]
+pub fn window_is_key(app: AppHandle, label: String) -> bool {
+    use tauri::Manager;
+    app.get_webview_window(&label)
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false)
+}
+
+/// 이름 있는 키가 이 엔진에서 도는 **명령** — 사람이 칠 때 AppKit 이 보내는 그 자리다.
+#[cfg(target_os = "macos")]
+fn command_selector(key: &str) -> Option<objc2::runtime::Sel> {
+    use objc2::sel;
+    Some(match key {
+        "Enter" => sel!(insertNewline:),
+        "Tab" => sel!(insertTab:),
+        "Escape" => sel!(cancelOperation:),
+        "Backspace" => sel!(deleteBackward:),
+        "Delete" => sel!(deleteForward:),
+        "ArrowLeft" => sel!(moveLeft:),
+        "ArrowRight" => sel!(moveRight:),
+        "ArrowDown" => sel!(moveDown:),
+        "ArrowUp" => sel!(moveUp:),
+        _ => return None,
+    })
+}
+
+/// 키 하나를 표면에 넣는다 — 글자가 아니라 **키**다.
+///
+/// 확정 문자열(`webview_type_text`)은 편집 경로로 들어가서 Enter·Escape·화살표 같은 것을 만들지
+/// 못한다. 그런 것으로만 닿는 기능(주소줄 확정, 팔레트 이동, 단축키)은 그래서 검증할 수 없었다.
+///
+/// 창을 key/front 로 만들지 않는다 — 사람의 포커스를 빼앗지 않는다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn webview_send_key(
+    app: AppHandle,
+    label: String,
+    key: String,
+    ctrl: Option<bool>,
+    meta: Option<bool>,
+    shift: Option<bool>,
+    alt: Option<bool>,
+) -> Result<(), String> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    // 이름 있는 키는 코드로, 글자는 그대로 — 엔진이 `key` 를 이 두 축에서 만든다.
+    let (code, chars): (u16, Option<&str>) = match key.as_str() {
+        "Enter" => (36, Some("\r")),
+        "Tab" => (48, Some("\t")),
+        "Escape" => (53, None),
+        "Backspace" => (51, None),
+        "ArrowLeft" => (123, None),
+        "ArrowRight" => (124, None),
+        "ArrowDown" => (125, None),
+        "ArrowUp" => (126, None),
+        other if other.chars().count() == 1 => (0, Some(other)),
+        other => return Err(format!(
+            "이 키는 아직 넣을 수 없습니다: {other}. 한 글자이거나 Enter·Tab·Escape·Backspace·화살표 중 하나를 쓰세요"
+        )),
+    };
+    let literal = chars.map(str::to_string);
+    let webview = registered_webview(&app, &label)
+        .ok_or_else(|| format!("이 이름의 표면이 없습니다: {label}. view.list 로 지금 있는 표면을 확인하세요"))?;
+    let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
+    webview
+        .with_webview(move |platform| unsafe {
+            use objc2::msg_send;
+            use objc2::runtime::AnyObject;
+            use objc2_foundation::{NSPoint, NSString};
+
+            let wk = platform.inner() as *mut AnyObject;
+            if wk.is_null() {
+                let _ = tx.try_send(Err("이 표면의 엔진 핸들이 비어 있습니다".to_string()));
+                return;
+            }
+            let window: *mut AnyObject = msg_send![&*wk, window];
+            if window.is_null() {
+                let _ = tx.try_send(Err("이 표면이 창에 붙어 있지 않습니다. 그 탭을 활성화한 뒤 다시 부르세요".to_string()));
+                return;
+            }
+            // **키보드는 창이 키일 때만 페이지에 닿는다.** 실측 2026-08-08: 창이 키가 아니면
+            // 문서의 `hasFocus()` 가 거짓이고, responder 를 세우고 명령을 보내도 페이지는
+            // keydown 을 0회 받았다. 조합도 같다.
+            //
+            // 창을 키로 만드는 것은 **사람의 포커스를 빼앗는 일**이라 여기서 하지 않는다.
+            // 대신 그 사실을 이름으로 답한다 — 무엇을 하면 되는지까지.
+            let is_key: bool = msg_send![&*window, isKeyWindow];
+            if !is_key {
+                let _ = tx.try_send(Err(
+                    "이 창이 키보드 포커스를 갖고 있지 않아 키가 페이지에 닿지 않습니다. window.focus 로 그 창을 앞으로 가져온 뒤 다시 부르세요"
+                        .to_string(),
+                ));
+                return;
+            }
+            // 키는 입력 responder 가 받는다 — 창을 key 로 만들지 않고 이 뷰만 세운다.
+            let _: bool = msg_send![&*window, makeFirstResponder: &*wk];
+            let responder: *mut AnyObject = msg_send![&*window, firstResponder];
+            // **이름 있는 키는 명령으로 간다.** WKWebView 는 키를 텍스트 입력자로 해석하고,
+            // Enter·Escape·화살표는 그 해석의 결과가 "명령"이다(실측 2026-08-08: 지어낸 키
+            // 사건을 keyDown: 으로 넣었더니 페이지가 keydown 을 0회 받았다 — 글자도 이름 있는
+            // 키도 전부). 사람이 치면 AppKit 이 같은 자리로 보낸다.
+            if !responder.is_null() {
+                if let Some(selector) = command_selector(&key) {
+                    let _: () = msg_send![&*responder, doCommandBySelector: selector];
+                    let _ = tx.try_send(Ok(()));
+                    return;
+                }
+                // 글자는 그대로 넣는다 — 확정 입력과 같은 경로다.
+                if let Some(literal) = literal.as_deref() {
+                    let value = NSString::from_str(literal);
+                    let nothing = objc2_foundation::NSRange::new(
+                        objc2_foundation::NSNotFound as usize,
+                        0,
+                    );
+                    let _: () = msg_send![
+                        &*responder,
+                        insertText: &*value,
+                        replacementRange: nothing
+                    ];
+                    let _ = tx.try_send(Ok(()));
+                    return;
+                }
+            }
+            let mut flags: usize = 0;
+            if ctrl.unwrap_or(false) { flags |= 1 << 18; }
+            if shift.unwrap_or(false) { flags |= 1 << 17; }
+            if alt.unwrap_or(false) { flags |= 1 << 19; }
+            if meta.unwrap_or(false) { flags |= 1 << 20; }
+            let text = NSString::from_str(literal.as_deref().unwrap_or(""));
+            let window_number: isize = msg_send![&*window, windowNumber];
+            let nil_ctx: *mut AnyObject = std::ptr::null_mut();
+            let event_class = objc2::class!(NSEvent);
+            for (kind, repeat) in [(10usize, false), (11usize, false)] {
+                let event: *mut AnyObject = msg_send![
+                    event_class,
+                    keyEventWithType: kind,
+                    location: NSPoint::new(0.0, 0.0),
+                    modifierFlags: flags,
+                    timestamp: 0f64,
+                    windowNumber: window_number,
+                    context: nil_ctx,
+                    characters: &*text,
+                    charactersIgnoringModifiers: &*text,
+                    isARepeat: repeat,
+                    keyCode: code
+                ];
+                if event.is_null() {
+                    let _ = tx.try_send(Err("키 사건을 만들지 못했습니다".to_string()));
+                    return;
+                }
+                let _: () = if kind == 10 {
+                    msg_send![&*wk, keyDown: &*event]
+                } else {
+                    msg_send![&*wk, keyUp: &*event]
+                };
+            }
+            let _ = tx.try_send(Ok(()));
+        })
+        .map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| "키 입력자가 시간 안에 답하지 않았습니다".to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub async fn webview_send_key(
+    _app: AppHandle,
+    _label: String,
+    _key: String,
+    _ctrl: Option<bool>,
+    _meta: Option<bool>,
+    _shift: Option<bool>,
+    _alt: Option<bool>,
+) -> Result<(), String> {
+    Err("webview_send_key는 현재 macOS 구현이 필요합니다".into())
 }
 
 /// 포커스된 child 웹뷰 편집자에 확정 문자열을 전달한다.

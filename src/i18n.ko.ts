@@ -901,6 +901,7 @@ export const ko = {
   "msg.webview.recover": "{label} 을 다시 불러왔습니다",
   "msg.window.close": "창을 닫았습니다",
   "msg.window.focus": "창을 앞으로 가져왔습니다",
+  "msg.window.focus.notKey": "창을 앞으로 가져왔지만 키보드 포커스는 오지 않았습니다(다른 앱이 활성입니다). 그 앱을 활성화한 뒤 다시 부르세요",
   "msg.window.info": "창 크기는 {w}×{h}입니다",
   "msg.window.layers": "뷰 계층을 덤프했습니다",
   "msg.window.list": "창 {n}개",

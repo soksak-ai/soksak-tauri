@@ -17,6 +17,7 @@ import { createStream, engineProvision } from "../framework";
 import { declarePluginRealm, type PluginRealm } from "./realm";
 import type { SurfacePointerInput } from "../lib/contentViews";
 import { contentViewHost } from "../lib/contentViews";
+import { registerSurfaceInputProvider } from "../lib/surfaceInputProviders";
 import {
   browserLabel,
   currentWindowLabel,
@@ -452,6 +453,27 @@ export interface SoksakPluginApi {
     /** pane 의 명령 종료(OSC 133/633 D) 구독 — git 등 파생 상태 갱신 트리거. 반환=해지. "terminal" 권한. */
     onCommandFinished?: (paneId: string, cb: () => void) => Disposable;
   };
+  /**
+   * 이 플러그인이 **자기 표면의 포인터 입력을 배달한다**고 코어에 건다.
+   *
+   * 엔진 사이드카로 그리는 표면은 코어의 통로가 안 닿는다 — 그 표면에 게스처를 보내면 코어는
+   * 배달할 자리를 못 찾는다(실측 2026-08-08: 브라우저 세 종 중 하나만 됐다). 코어가 그 엔진을
+   * 알아서 고치면 결합이므로, 주인이 스스로 답하고 코어는 배달만 한다.
+   *
+   * `owns` 는 라벨 하나를 받아 내 것인지 답한다 — 코어는 라벨 문법으로 추측하지 않는다.
+   * 반환은 해지: 뷰가 사라지면 주인도 사라진다(남기면 죽은 사이드카로 계속 보낸다).
+   */
+  provideSurfaceInput?: (provider: {
+    owns: (label: string) => boolean;
+    sendInput: (label: string, input: {
+      x: number; y: number;
+      kind: "down" | "up" | "move" | "drag" | "enter" | "exit";
+      button: "left" | "right";
+      clickCount: number;
+    }) => Promise<void>;
+    inputState: (label: string, at?: { x: number; y: number }) => Promise<Record<string, unknown>>;
+  }) => () => void;
+
   /** 코어가 임베드/구동하는 child webview(WKWebView) — 브라우저 같은 콘텐츠 뷰가 소유. "webview" 권한.
    *  네이티브 webview 는 코어가 label 키로 생성/소유, 플러그인은 label 로 구동(JS 가 WKWebView 못 만듦).
    *  macOS 우선 — eval/inject 는 macOS 한정(비-macOS graceful 에러/no-op). */
@@ -1906,6 +1928,11 @@ export function buildPluginApi(
               : {}),
           }
         : undefined,
+    // 이 플러그인이 자기 표면의 포인터를 배달한다고 거는 자리. 어떤 엔진인지 코어는 모른다 —
+    // 주인이 라벨 하나를 받아 자기 것인지 답하고, 코어는 그리로 배달만 한다.
+    provideSurfaceInput: has("webview")
+      ? (provider) => registerSurfaceInputProvider(id, provider)
+      : undefined,
     // 코어가 소유하는 child webview 구동(브라우저 플러그인). 네이티브 명령 = webview_*(capability 접두,
     // docs/NAMING.md 법). label 은 webviewLabels 단일진실에서만 파생.
     webview: has("webview")

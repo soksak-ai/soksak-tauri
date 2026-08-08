@@ -10,6 +10,7 @@ import { moduleState } from "../lib/moduleState";
 import { currentWindow } from "../framework";
 import { browserLabel, currentWindowLabel } from "../lib/webviewLabels";
 import { contentViewHost, hasContentViewHost, type SurfacePointerInput } from "../lib/contentViews";
+import { surfaceInputProvider } from "../lib/surfaceInputProviders";
 import { parseAddress, isParseError } from "./address";
 import { scanNodes, type ScannedNode } from "../plugins/nodeScan";
 import { register } from "./registry";
@@ -320,7 +321,7 @@ function nodeIdentityOf(el: Element): string {
 const notExposed = (addr: string) => ({
   ok: false as const,
   code: "NOT_EXPOSED" as const,
-  message: `노출되지 않은 주소(접근 불가): ${addr}`,
+  message: `이 주소는 공개되지 않았습니다: ${addr}. ui.tree 로 지금 부를 수 있는 주소를 확인하세요`,
 });
 
 // 뷰 컨테이너의 단일 셀렉터 — 아래 두 순회(수집·제외)가 같은 집합을 보지 않으면 노드가 두 번
@@ -394,7 +395,7 @@ export function resolveExposed(addressStr: string): Resolved {
     return {
       ok: false as const,
       code: "AMBIGUOUS" as const,
-      message: `한 주소가 ${matches.length}개로 풀립니다(주소 공리 A1 위반): ${addressStr} — tab 축으로 좁히세요`,
+      message: `이 주소가 ${matches.length}개로 풀립니다: ${addressStr}. tab 을 지정해 하나로 좁히세요`,
     };
   }
   return { el: matches[0].el };
@@ -905,16 +906,6 @@ function projectedRealmNode(el: Element): boolean {
   return el instanceof HTMLElement && /^[^/]+\/plugin-view\/[^/]+\//.test(el.dataset.node ?? "");
 }
 
-function projectedRealmRefusal(el: Element, addr: string) {
-  if (!projectedRealmNode(el)) return null;
-  return {
-    ok: false as const,
-    code: "OTHER_REALM" as const,
-    message:
-      `이 노드는 다른 realm 의 투영입니다(plugin-view) — 호스트에 꽂은 사건은 그 안에 닿지 않습니다: ${addr}. ` +
-      "이 명령은 아직 그 realm 으로 가는 길이 없습니다(포인터 게스처·채우기는 넘어갑니다).",
-  };
-}
 
 /** 투영 주소가 밝히는 realm 과 그 안의 노드 — `tauri/plugin-view/<realm>/<node>`. */
 function projectedTarget(el: Element): { realm: string; node: string } | null {
@@ -1002,7 +993,7 @@ function noGesturePath(addr: string) {
   return {
     ok: false as const,
     code: "OTHER_REALM" as const,
-    message: `이 노드는 다른 표면에 살고, 그리로 포인터를 넣는 길이 이 프레임워크엔 없습니다: ${addr}`,
+    message: `이 노드는 다른 화면 안에 있는데 지금 프레임워크에는 그리로 입력을 넣는 통로가 없습니다: ${addr}. 다른 프레임워크로 실행한 창에서 다시 부르세요`,
   };
 }
 
@@ -1016,9 +1007,12 @@ async function playGesture(
   label: string,
   steps: readonly SurfacePointerInput[],
 ): Promise<{ ok: false; code: "SURFACE_INPUT_UNAVAILABLE"; message: string } | null> {
-  const host = contentViewHost();
+  // **표면의 주인에게 간다.** 플러그인이 엔진 사이드카로 그리는 표면은 프레임워크의 통로가 안
+  // 닿는다(실측 2026-08-08: 브라우저 세 종 중 하나만 됐다). 코어가 그 엔진을 알아서 고치면
+  // 결합이므로, 주인이 스스로 답하고 코어는 배달만 한다. 주인이 없으면 프레임워크가 맡는다.
+  const sink = surfaceInputProvider(label) ?? contentViewHost();
   try {
-    for (const step of steps) await host.sendInput(label, step);
+    for (const step of steps) await sink.sendInput(label, step);
     return null;
   } catch (error) {
     // 표면이 **있다**는 것과 이 프레임워크가 그것을 **쥐고 있다**는 것은 다른 사실이다.
@@ -1027,7 +1021,9 @@ async function playGesture(
     return {
       ok: false as const,
       code: "SURFACE_INPUT_UNAVAILABLE" as const,
-      message: `이 표면으로 포인터를 넣지 못했습니다(${label}): ${error instanceof Error ? error.message : String(error)}`,
+      message:
+        `이 표면으로 포인터를 넣지 못했습니다(${label}): ${error instanceof Error ? error.message : String(error)}. ` +
+        "ui.input.state 로 그 표면이 지금 입력을 받을 수 있는지 확인하세요",
     };
   }
 }
@@ -1065,7 +1061,11 @@ async function inProjectedRealm(
   // 기존 값을 고른 뒤 네이티브 입력으로 넣으면 사람이 친 것과 같은 경로가 된다.
   const ready = await host.evalJs(target.realm, `const el = ${pick}; if (!el) return "none"; el.focus(); if (el.select) el.select(); return "ok";`);
   if (!String(ready).includes("ok")) {
-    return { ok: false as const, code: "NOT_EXPOSED" as const, message: `그 realm 에 노드가 없습니다: ${addr}` };
+    return {
+      ok: false as const,
+      code: "NOT_EXPOSED" as const,
+      message: `그 화면 안에 이 노드가 없습니다: ${addr}. ui.tree 로 지금 있는 주소를 확인하세요`,
+    };
   }
   await host.typeText(target.realm, action.value);
   return { filled: true, realm: target.realm, address: addr };
@@ -1323,18 +1323,21 @@ async function inProjectedRealm(
         return {
           ok: false as const,
           code: "NOT_A_SURFACE" as const,
-          message: `이 노드는 표면이 아닙니다 — 조합을 넣을 편집자가 없습니다: ${addr}`,
+          message: `이 주소는 화면 표면이 아니라 조합을 넣을 입력 요소가 없습니다: ${addr}. 그 뷰의 표면 주소로 부르세요`,
         };
       }
       if (!hasContentViewHost()) return noGesturePath(addr);
       const text = typeof p.text === "string" ? (p.text as string) : "";
       try {
+        // 조합은 아직 프레임워크가 쥔 표면의 사실이다 — 주인이 그 자리를 밝히면 그때 축을 연다.
         await contentViewHost().markText(surface.label, text);
       } catch (error) {
         return {
           ok: false as const,
           code: "SURFACE_INPUT_UNAVAILABLE" as const,
-          message: `이 표면에 조합을 넣지 못했습니다(${surface.label}): ${error instanceof Error ? error.message : String(error)}`,
+          message:
+            `이 표면에 조합을 넣지 못했습니다(${surface.label}): ${error instanceof Error ? error.message : String(error)}. ` +
+            "먼저 그 입력 요소를 클릭해 커서를 두세요",
         };
       }
       return { address: addr, surface: surface.label, composing: text.length === 0 ? null : text };
@@ -1365,7 +1368,7 @@ async function inProjectedRealm(
         return {
           ok: false as const,
           code: "NOT_A_SURFACE" as const,
-          message: `이 노드는 표면이 아닙니다 — 물을 배달 조건이 없습니다: ${addr}`,
+          message: `이 주소는 화면 표면이 아니라 입력 상태를 답할 것이 없습니다: ${addr}. 그 뷰의 표면 주소로 부르세요`,
         };
       }
       if (!hasContentViewHost()) return noGesturePath(addr);
@@ -1373,12 +1376,15 @@ async function inProjectedRealm(
         const at = typeof p.x === "number" && typeof p.y === "number"
           ? { x: p.x as number, y: p.y as number }
           : undefined;
-        return { address: addr, surface: surface.label, state: await contentViewHost().inputState(surface.label, at) };
+        const sink = surfaceInputProvider(surface.label) ?? contentViewHost();
+        return { address: addr, surface: surface.label, state: await sink.inputState(surface.label, at) };
       } catch (error) {
         return {
           ok: false as const,
           code: "SURFACE_INPUT_UNAVAILABLE" as const,
-          message: `이 표면의 상태를 읽지 못했습니다(${surface.label}): ${error instanceof Error ? error.message : String(error)}`,
+          message:
+            `이 표면의 상태를 읽지 못했습니다(${surface.label}): ${error instanceof Error ? error.message : String(error)}. ` +
+            "그 탭이 지금 열려 있는지 tab.list 로 확인하세요",
         };
       }
     },
@@ -1406,7 +1412,7 @@ async function inProjectedRealm(
       'ui.input.key \'{"address":"win/main/content/view/x/node/composer-input","key":"r","ctrl":true}\'',
       'ui.input.key \'{"address":"…/node/composer-input","key":"ArrowDown"}\'',
     ],
-    handler: (p) => {
+    handler: async (p) => {
       const addr = p.address as string;
       const key = p.key as string;
       if (typeof key !== "string" || key.length === 0) {
@@ -1414,9 +1420,28 @@ async function inProjectedRealm(
       }
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
-      // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
-      { const other = projectedRealmRefusal(found.el, addr); if (other) return other; }
       const el = found.el;
+      // 다른 표면에 사는 노드는 그 표면 안으로 진짜 키를 넣는다 — 호스트에 만든 키 사건은
+      // 그 안에 안 닿고, 닿아도 사용자 활성화가 없어 엔진이 막는다.
+      const keySurface = gestureSurface(el);
+      if (keySurface) {
+        if (!hasContentViewHost()) return noGesturePath(addr);
+        try {
+          await contentViewHost().sendKey(keySurface.label, key, {
+            ctrl: p.ctrl === true, meta: p.meta === true,
+            shift: p.shift === true, alt: p.alt === true,
+          });
+        } catch (error) {
+          return {
+            ok: false as const,
+            code: "SURFACE_INPUT_UNAVAILABLE" as const,
+            message:
+              `이 표면에 키를 넣지 못했습니다(${keySurface.label}): ${error instanceof Error ? error.message : String(error)}. ` +
+              "그 탭을 활성화한 뒤 다시 부르세요",
+          };
+        }
+        return { dispatched: true, address: addr, key, surface: keySurface.label };
+      }
       const init: KeyboardEventInit = {
         key,
         ctrlKey: p.ctrl === true,

@@ -30,7 +30,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["$HOME/**"],
+          "allow": ["$HOME/.soksak*/plugins/**"],
           "requireLiteralLeadingDot": false
         }
       }

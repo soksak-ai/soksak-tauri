@@ -896,6 +896,7 @@ export const en: Record<MsgKey, string> = {
   "msg.webview.recover": "Reloaded {label}",
   "msg.window.close": "Closed the window",
   "msg.window.focus": "Brought the window forward",
+  "msg.window.focus.notKey": "Brought the window forward, but keyboard focus did not follow (another app is active). Activate this app and call again",
   "msg.window.info": "The window is {w}×{h}",
   "msg.window.layers": "Dumped the view hierarchy",
   "msg.window.list": "{n} windows",

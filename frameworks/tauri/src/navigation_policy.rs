@@ -245,7 +245,7 @@ mod tests {
         let csp = security["csp"].as_str().expect("CSP must be enabled");
         for directive in [
             "default-src 'self'",
-            "connect-src 'self' ipc: http://ipc.localhost",
+            "ipc: asset: http://asset.localhost http://ipc.localhost",
             "object-src 'none'",
             "base-uri 'none'",
             "form-action 'none'",
@@ -253,15 +253,32 @@ mod tests {
             assert!(csp.contains(directive), "CSP missing `{directive}`: {csp}");
         }
 
+        // 자원 프로토콜은 **켠다.** 플러그인 번들이 IPC 를 지나면 그 양이 곧 부팅 시간이다
+        // (실측 2026-08-08: 23.8MB 중 약 15MB 가 문자열로 건너느라 818ms, 엔진 자원 경로로는
+        // 41ms). 그래서 규칙이 "끈다" 에서 **"좁힌다"** 로 바뀐다 — 여는 이유가 생겼으니
+        // 지켜야 할 것은 넓이다.
         assert_eq!(
             security["assetProtocol"]["enable"],
-            serde_json::Value::Bool(false),
-            "filesystem asset protocol must be disabled; files cross typed IPC instead",
+            serde_json::Value::Bool(true),
+            "plugin bundles load through the asset protocol; disabling it puts 15MB back on IPC",
         );
-        assert!(
-            security["assetProtocol"].get("scope").is_none(),
-            "disabled asset protocol must not retain a misleading broad scope",
-        );
+        let allow = security["assetProtocol"]["scope"]["allow"]
+            .as_array()
+            .expect("enabled asset protocol must declare what it opens");
+        assert!(!allow.is_empty(), "asset scope must name what it opens");
+        for pattern in allow {
+            let pattern = pattern.as_str().expect("scope entries are patterns");
+            // 홈 전체를 열면 웹뷰가 사용자의 모든 파일을 읽는다 — 번들을 읽으려고 연 문이
+            // 문서·열쇠까지 함께 연다.
+            assert!(
+                pattern.contains("/plugins/"),
+                "asset scope must stay inside plugin directories: {pattern}",
+            );
+            assert!(
+                !pattern.starts_with("$HOME/**") && !pattern.starts_with("/**"),
+                "asset scope must not open a whole tree: {pattern}",
+            );
+        }
         // freezePrototype 는 꺼둔다. 플러그인은 full-trust 로 이 창의 realm 에 직접 적재되고(창-realm
         // 실행), 동결된 Object.prototype 은 상속 속성에 쓰는 표준 라이브러리를 깬다 — xterm.js 의
         // TS-namespace 산물이 `o.toString = fn` 을 빈 객체에 하는데, 동결 시 상속 toString 이 readonly 라
@@ -272,8 +289,8 @@ mod tests {
 
         let cargo = std::fs::read_to_string("Cargo.toml").expect("Cargo manifest");
         assert!(
-            !cargo.contains("protocol-asset"),
-            "disabled filesystem asset protocol must not remain compiled in",
+            cargo.contains("protocol-asset"),
+            "the asset protocol the config enables must actually be compiled in",
         );
     }
 }

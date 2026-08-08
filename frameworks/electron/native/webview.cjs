@@ -280,6 +280,29 @@ module.exports = {
     },
   },
 
+  // 키 하나 — 글자가 아니라 키다. 확정 문자열로는 Enter·Escape·화살표를 만들 수 없다.
+  webview_send_key: {
+    concept: "콘텐츠 뷰 키 입력",
+    source: "게스트 webContents sendInputEvent(keyDown/char/keyUp)",
+    answer: (ctx, args) => {
+      const guest = ctx.webContentsById(Number(args.id));
+      if (!guest) throw frameworkError("NO_CONTENT_VIEW", `그 콘텐츠 뷰가 없다: ${args.id}`);
+      const key = String(args.key ?? "");
+      if (key.length === 0) throw frameworkError("INVALID_PARAMS", "key 가 필요하다");
+      const modifiers = [];
+      if (args.ctrl) modifiers.push("control");
+      if (args.shift) modifiers.push("shift");
+      if (args.alt) modifiers.push("alt");
+      if (args.meta) modifiers.push("meta");
+      const base = { keyCode: key, modifiers };
+      guest.sendInputEvent({ type: "keyDown", ...base });
+      // 글자 하나는 char 사건까지 있어야 편집면에 들어간다 — 이름 있는 키에는 그 자리가 없다.
+      if (key.length === 1) guest.sendInputEvent({ type: "char", ...base });
+      guest.sendInputEvent({ type: "keyUp", ...base });
+      return null;
+    },
+  },
+
   // 이 표면이 지금 포인터를 받을 수 있는 상태인가 — 게스트 프로세스만 아는 사실.
   webview_input_state: {
     concept: "콘텐츠 뷰 입력 배달 조건",

@@ -158,6 +158,13 @@ module.exports = {
     },
   },
 
+  // 요청과 결과는 다른 사실이다 — 다른 앱이 활성이면 창을 앞으로 올려도 키보드는 안 온다.
+  window_is_key: {
+    concept: "이 창이 키보드를 받는 창인가",
+    source: "BrowserWindow.isFocused",
+    answer: (ctx, args) => need(ctx, args).isFocused(),
+  },
+
   // 물리 rect 를 그대로 놓는다. 전략(어디에 둘지)은 프론트의 순수함수가 정하고, 여기는 시행만
   // 한다 — 팩트/전략 분리.
   // 앱 자기활성화 — 이 창을 key 로 만드는 것과 **앱을 전면으로 내는 것**은 다른 일이다.
