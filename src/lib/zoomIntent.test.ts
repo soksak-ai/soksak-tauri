@@ -9,7 +9,11 @@ const zoomNative = vi.hoisted(() => ({
   emitPluginEvent: vi.fn(),
 }));
 
-vi.mock("../framework", () => ({ invoke: zoomNative.invoke }));
+// 배율이 화면에 닿는 방법은 프레임워크의 것이다 — 이 검사는 **언제** 닿는지를 본다.
+vi.mock("../framework", () => ({
+  invoke: zoomNative.invoke,
+  framework: { setWindowZoom: zoomNative.invoke },
+}));
 vi.mock("../plugins/hooks", () => ({ emitPluginEvent: zoomNative.emitPluginEvent }));
 
 import {
@@ -116,7 +120,7 @@ describe("창 줌 적용 transaction", () => {
 
     const applied = applyWindowZoom(1.2) as unknown as Promise<void>;
 
-    expect(zoomNative.invoke).toHaveBeenCalledWith("webview_zoom", { factor: 1.2 });
+    expect(zoomNative.invoke).toHaveBeenCalledWith(1.2);
     expect(
       zoomNative.emitPluginEvent,
       "window.zoom was emitted from intent time, before the native zoom/scale truth was applied",

@@ -11,7 +11,14 @@ vi.stubGlobal("localStorage", {
   removeItem: (key: string) => void mem.delete(key),
   clear: () => mem.clear(),
 });
-vi.mock("../framework", () => ({ invoke: vi.fn(async () => undefined) }));
+// 모듈을 손 목록으로 흉내내지 않는다 — 계약에 축이 늘면 그 목록에 없는 것이 undefined 가
+// 되고, 그 실패는 이 검사와 무관한 자리에서 난다(실측 2026-08-08: `setWindowZoom` 을 계약에
+// 세우자 이 검사가 그 이름 없이 죽었다). 진짜 모듈(테스트에서는 중립 어댑터)을 펴고 부르는
+// 자리만 바꾼다.
+vi.mock("../framework", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../framework")>()),
+  invoke: vi.fn(async () => undefined),
+}));
 
 import { registerCatalog } from "./catalog";
 import { execute } from "./registry";

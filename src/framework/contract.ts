@@ -179,6 +179,20 @@ export interface AppFramework {
    */
   presentWindow(): Promise<void>;
 
+  /**
+   * Apply one zoom factor to everything this window shows.
+   *
+   * The value has one owner (the `windowZoom` setting); how it reaches the screen does not. Where
+   * content lives in native child webviews, the framework scales the window and its children in
+   * one native call. Where content lives in the DOM as guest elements, the document's own zoom
+   * carries them and each guest is told the same factor.
+   *
+   * 계약에 두는 이유: 코어가 한쪽의 명령 이름을 부르면 다른 쪽은 **부팅마다 거절**한다
+   * (실측 2026-08-08: `webview_zoom` 이 Electron 에서 거절되어 활동 피드에 매 부팅 reject
+   * 한 줄이 남았다). 축을 계약에 세우면 새 프레임워크가 빠뜨릴 때 컴파일이 막는다.
+   */
+  setWindowZoom(factor: number): Promise<void>;
+
   /** 백엔드 명령 호출. 프레임워크가 프로세스 내부 호출이든 소켓이든 앱은 모른다. */
   invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T>;
 

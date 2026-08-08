@@ -50,6 +50,8 @@ export const selectedFramework: AppFramework = {
   emitLocal: () => {},
   install: async () => {},
   presentWindow: async () => {},
+  // 중립 어댑터에는 화면이 없다 — 배율을 실을 자리가 없으므로 아무 일도 하지 않는다.
+  setWindowZoom: async () => {},
   invoke: unsupported,
   createStream: () => ({ onmessage: () => {} }),
   listen: unsupported,

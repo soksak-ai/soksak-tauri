@@ -281,6 +281,16 @@ export const electronFramework: AppFramework = {
   // hidden→native receipt gate를 물려받지 않는다; 공통 생명주기 경계를 멱등 완료할 뿐이다.
   presentWindow: async () => {},
 
+  // 콘텐츠가 DOM 안에 `<webview>` 게스트로 산다 — 네이티브로 건널 자리가 없다. 문서 자신의
+  // 배율이 게스트의 **자리**를 키우고, 게스트 **안**은 각자 같은 값을 받아야 함께 커진다.
+  // 하나만 하면 배율이 갈려 자리와 내용이 어긋난다.
+  setWindowZoom: async (factor: number) => {
+    await windowOp<void>(null, "setZoomFactor", { factor });
+    const { domHost } = await import("./contentViews");
+    const labels = await domHost.list();
+    await Promise.all(labels.map((label) => domHost.zoom(label, factor).catch(() => undefined)));
+  },
+
   invoke: async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
     const r = await bridge().invoke(cmd, args);
     if (!r.ok) {

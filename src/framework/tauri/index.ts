@@ -144,6 +144,12 @@ export const tauriFramework: AppFramework = {
   install: () => import("./install").then((m) => m.installTauri()),
   presentWindow: () => import("./install").then((m) => m.presentTauriWindow()),
 
+  // 콘텐츠가 네이티브 자식 웹뷰로 산다 — 창과 자식 전부를 한 번의 네이티브 호출이 같은
+  // 배율로 만든다("값 하나, 소비 전원").
+  setWindowZoom: async (factor: number) => {
+    await tauriInvoke("webview_zoom", { factor });
+  },
+
   invoke: <T,>(cmd: string, args?: Record<string, unknown>) => tauriInvoke<T>(cmd, args),
 
   createStream: <T,>(): Stream<T> => new Channel<T>() as unknown as Stream<T>,

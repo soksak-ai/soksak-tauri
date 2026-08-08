@@ -658,6 +658,11 @@ ipcMain.handle("framework:window", async (e, { label, op, args, exact }) => {
   const scale = screen.getDisplayMatching(win.getBounds()).scaleFactor || 1;
   try {
     switch (op) {
+      // 이 창이 보여주는 것 전부에 한 배율. 게스트 `<webview>` 는 이 문서 안의 요소라 자리는
+      // 함께 커지고, 그 안은 렌더러가 각 게스트에 같은 값을 넣어 맞춘다(어댑터가 두 쪽을 다 한다).
+      case "setZoomFactor":
+        win.webContents.setZoomFactor(Number(args?.factor ?? 1));
+        return { ok: true };
       case "setTitle":
         win.setTitle(String(args.title));
         return { ok: true };
