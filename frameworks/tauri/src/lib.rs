@@ -1,7 +1,7 @@
 mod activity;
 mod ai_session;
 mod app_nap;
-mod boot_trace;
+
 // 이 프레임워크가 cored 의 창 호스트가 되는 자리. `pub` 인 이유는 검증이다 — 붙는 계약은
 // 소켓 위에서 재야 하고(tests/attaches_to_cored.rs), 통합 검사는 이 크레이트 **밖**에서 돈다.
 // 배달 통로는 유닉스 소켓이라 cored 자신과 같은 축으로 가른다(cored 는 unix 전용이다).
@@ -98,7 +98,7 @@ fn window_set_background(window: tauri::Window, color: String) -> Result<(), Str
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 이 프로세스가 자기 코드에 닿은 시각 — 앞은 적재, 뒤는 프레임워크다(고칠 자리가 다르다).
-    boot_trace::mark_process_entered();
+    soksak_core::boot_trace::mark_process_entered();
     let builder = tauri::Builder::default()
         .plugin(navigation_policy::init())
         .plugin(tauri_plugin_opener::init())
@@ -171,12 +171,12 @@ pub fn run() {
             }
         }
     });
-    boot_trace::mark_builder_ready();
+    soksak_core::boot_trace::mark_builder_ready();
     builder
         .setup(|app| {
             // 부팅 단계 계측 — 어디서 시간이 가는지 기계가 답한다(실측 2026-08-08: 명령이
             // 열리기까지 10.2 초였는데 그 구간을 재는 자리가 없었다).
-            let mut boot = boot_trace::BootTrace::start();
+            let mut boot = soksak_core::boot_trace::BootTrace::start();
             boot.step("setup-enter");
             // Configured windows are born hidden. Register this exact native lifetime before any
             // native/renderer work so no pre-composition frame can become externally visible.
@@ -367,7 +367,7 @@ pub fn run() {
             schedule::reload_persisted(app.handle());
             boot.step("schedule-reload");
             // 모은 도장을 원장으로 — 저장소가 열린 뒤라야 쓸 수 있다(home-init 이후).
-            boot.flush(app.handle());
+            boot.flush(&crate::activity_sink::AppSink(app.handle().clone()));
             // 시크릿 볼트 — 경로 + KEK 출처(os_key OS 키체인) 주입. 투명 언락: 마스터 passphrase 없이
             // device KEK 로 부팅 시 자동 개방(env 무음 언락 경로 없음 — P0 제거). keyring 은 os_key 안에서만
             // 인스턴스화 → 여기 주입은 지연(첫 접근 때 키체인 접근). 경로·expect 확정을 DB open 뒤로 둔다.

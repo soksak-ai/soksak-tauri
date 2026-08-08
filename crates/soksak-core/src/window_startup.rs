@@ -1,5 +1,9 @@
 //! Pure startup-presentation gate for native windows.
 //!
+//! 프레임워크에 매이지 않는다 — 창을 **만드는 방법**은 프레임워크의 것이지만, "숨겨 만들고
+//! 영수증 둘이 모인 뒤에만 보인다" 는 **규칙**은 아니다. 규칙이 프레임워크 폴더 안에 살면
+//! 두 번째 프레임워크가 그 규칙을 다시 적게 되고, 두 벌은 갈릴 때까지 조용하다.
+//!
 //! A creator registers a window before building it with `visible = false`. Creation and a
 //! renderer-provided GREEN composition receipt are recorded independently. The caller may take a
 //! presentation decision only after both facts exist. On macOS, the receipt must match a non-zero

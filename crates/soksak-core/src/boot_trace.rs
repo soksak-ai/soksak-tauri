@@ -4,6 +4,9 @@
 //! 없어 원인을 좁힐 수 없었다. 프론트엔드의 boot.step 은 그 뒤(1.3s)부터라 이 구간을 못 본다.
 //!
 //! 단계마다 자기 이름과 걸린 시간을 남긴다. 느린 단계는 그 이름으로 드러난다.
+//!
+//! **프레임워크에 매이지 않는다.** 부팅의 시각과 순서는 어느 실행물이든 같은 사실이고, 원장에
+//! 흘려보내는 자리만 호스트마다 다르다 — 그 자리는 계약(`ActivitySink`)으로 받는다.
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -14,7 +17,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 /// 고칠 자리가 다르므로 갈라 재야 한다.
 static PROCESS_ENTERED: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
 
-pub(crate) fn mark_process_entered() {
+pub fn mark_process_entered() {
     let _ = PROCESS_ENTERED.set(unix_ms());
 }
 
@@ -22,7 +25,7 @@ pub(crate) fn mark_process_entered() {
 /// 창을 만들어 setup 에 닿기까지다 — 이 둘도 고칠 자리가 다르다.
 static BUILDER_READY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
 
-pub(crate) fn mark_builder_ready() {
+pub fn mark_builder_ready() {
     let _ = BUILDER_READY.set(unix_ms());
 }
 
@@ -34,7 +37,7 @@ fn unix_ms() -> u64 {
 }
 
 /// 한 부팅의 단계 원장. 첫 도장 시각을 기준으로 각 단계의 누적·구간을 잰다.
-pub(crate) struct BootTrace {
+pub struct BootTrace {
     started: Instant,
     last: Instant,
     /// 찍은 도장과 **그 순간의 벽시계**. 원장은 저장소가 열린 뒤에야 쓸 수 있어 나중에 흘려보내는데,
@@ -43,13 +46,13 @@ pub(crate) struct BootTrace {
 }
 
 impl BootTrace {
-    pub(crate) fn start() -> Self {
+    pub fn start() -> Self {
         let now = Instant::now();
         Self { started: now, last: now, stamps: Vec::new() }
     }
 
     /// 이 단계가 끝났다고 도장을 찍는다. 직전 단계부터 걸린 시간과 부팅 시작부터의 누적을 낸다.
-    pub(crate) fn step(&mut self, name: &str) {
+    pub fn step(&mut self, name: &str) {
         let now = Instant::now();
         let span = now.duration_since(self.last);
         let total = now.duration_since(self.started);
@@ -66,7 +69,7 @@ impl BootTrace {
     ///
     /// 원장은 저장소가 열린 뒤에만 쓸 수 있다. 그래서 찍을 때가 아니라 여기서 보내되, 각
     /// 도장은 자기가 찍힌 시각을 싣는다(`atUnixMs`).
-    pub(crate) fn flush(&self, app: &tauri::AppHandle) {
+    pub fn flush(&self, sink: &dyn crate::activity_sink::ActivitySink) {
         let early: Vec<(String, u64)> = [
             ("process-enter", PROCESS_ENTERED.get().copied()),
             ("builder-ready", BUILDER_READY.get().copied()),
@@ -75,8 +78,7 @@ impl BootTrace {
         .filter_map(|(name, at)| at.map(|at| (name.to_string(), at)))
         .collect();
         for (name, at) in early.iter().chain(self.stamps.iter()) {
-            crate::activity::publish(
-                app,
+            sink.publish(
                 "boot.step",
                 "boot",
                 serde_json::json!({

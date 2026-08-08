@@ -7,13 +7,12 @@
 
 use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 
-mod startup;
 
-use startup::{
+use soksak_core::window_startup::{
     CompositionProof, CurrentNativeSequence, PresentationOutcome, RendererGreenReceipt,
     StartupGate, StartupStatus, WindowPlatform,
 };
-pub(crate) use startup::WindowIdentity;
+pub(crate) use soksak_core::window_startup::WindowIdentity;
 
 #[derive(Debug, Default)]
 struct WindowStartupRuntime {

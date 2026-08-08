@@ -19,6 +19,10 @@
 
 pub mod activity;
 pub mod activity_sink;
+// 부팅 단계 계측 — 시각과 순서는 프레임워크 무관이고, 흘려보낼 자리만 계약으로 받는다.
+pub mod boot_trace;
+// 네이티브 창의 최초 표시 게이트 — 만드는 방법은 프레임워크, 보여도 되는가는 규칙이다.
+pub mod window_startup;
 pub mod ambient_gate;
 pub mod control;
 pub mod fsx;

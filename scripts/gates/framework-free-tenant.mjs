@@ -88,8 +88,11 @@ export const DECLARED = new Map([
   ["frameworks/tauri/src/dockmenu.rs", ["framework", "Dock 메뉴 — OS 표면이고 앱 핸들이 몸이다"]],
   ["frameworks/tauri/src/home.rs", ["framework", "이 프로세스의 앰비언트 홈 결속(규칙은 코어)"]],
   ["frameworks/tauri/src/i18n.rs", ["framework", "문장은 자원이지만 내보내는 자리가 OS 알림·창이다"]],
-  ["frameworks/tauri/src/titlebar.rs", ["framework", "창 크롬 — 몸이 tauri::Window 다"]],
   ["frameworks/tauri/src/webview/appkit_events.rs", ["framework", "주입받은 앱 핸들로 AppKit 사건을 창에 배달한다"]],
+  ["frameworks/electron/displayGeometry.cjs", ["framework", "이 프레임워크의 화면 좌표 변환 — 무엇을 변환할 수 있는지가 그 프레임워크·플랫폼의 사실이다(screen 은 검사 때문에 주입받을 뿐)"]],
+  ["frameworks/electron/frameSubscriptionBroker.cjs", ["framework", "begin/endFrameSubscription 은 WebContents 의 전역 손잡이다 — 그 손잡이를 소유할 수 있는 자리가 여기뿐이다"]],
+  ["frameworks/electron/resizeSettlement.cjs", ["framework", "BrowserWindow resize 가 끝났다는 판정 — 그 사건과 guest presentation 이 이 프레임워크의 것이다"]],
+  ["frameworks/tauri/src/webview/presentation_clock.rs", ["framework", "macOS 표시 타임베이스(CACurrentMediaTime) 를 읽는다 — 코어는 무의존이라 담을 수 없고, 이 표시 파이프라인을 소유한 실행물이 여기다"]],
 
   // ── tenant: 얇게 묶였을 뿐 몸은 무관하다 ────────────────────────────────────
   // ── tenant: 프레임워크 무관인데 여기 산다. 코어로 간다 ──────────────────────
