@@ -587,6 +587,24 @@ async function createPresentedView(
     setProjectedCompositionVisibility(view, visible);
   });
   input.container.setAttribute(TAURI_PANE_RENDERER_ATTR, renderer);
+  // 이 자리의 포인터는 호스트가 받는다(자식 표면이 메인 웹뷰 아래에 깔리므로) — 받은 자리를
+  // realm-로컬 좌표로 바꿔 넘긴다. 넘기지 않으면 그 안의 것은 **보이기만 하고 눌리지 않는다.**
+  //
+  // 키보드까지 그 realm 으로 가려면 그 웹뷰가 입력 responder 여야 한다 — 눌린 순간 그것을
+  // 요청한다(뜰 때가 아니라 눌릴 때다: 뜰 때 뺏으면 사용자가 치던 곳에서 커서가 튄다).
+  const forwardPointer = (e: MouseEvent) => {
+    const rect = input.container.getBoundingClientRect();
+    void invoke("webview_visible", { label: renderer, visible: true, focus: true }).catch(() => {});
+    void emitTo(renderer, event(renderer, "pointer"), {
+      x: Math.round(e.clientX - rect.left),
+      y: Math.round(e.clientY - rect.top),
+    }).catch(() => {});
+  };
+  //  으로 듣는다 — 실클릭도 이것을 내고, 합성 클릭(ui.input.click)도 같은 이름을 낸다.
+  // 이름이 갈리면 사람 경로와 검증 경로가 달라져 "검증은 되는데 손으로는 안 되는" 자리가 생긴다.
+  input.container.addEventListener("mousedown", forwardPointer, true);
+  // 뷰가 사라지면 이 구독도 사라진다 — 남기면 죽은 realm 으로 계속 보낸다.
+  view.unlisten.push(() => input.container.removeEventListener("mousedown", forwardPointer, true));
   state.views.set(nativeHostId, view);
   state.readiness.set(nativeHostId, false);
 

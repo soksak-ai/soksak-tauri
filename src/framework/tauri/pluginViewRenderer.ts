@@ -108,6 +108,24 @@ function reportSlots(): void {
 // 거래는 같은 측정 함수를 사건으로 호출하며, 별도 좌표 경로나 타이머를 만들지 않는다.
 await listen(event("measure"), reportSlots);
 
+// 호스트가 받은 포인터를 이 realm 에서 되살린다.
+//
+// 이 문서가 사는 웹뷰는 메인 DOM 웹뷰 **아래**에 깔린다(그 순서는 옳다 — 위로 올리면
+// 사이드바·모달을 덮는다). 그래서 이 자리의 마우스는 위에 있는 웹뷰가 받는다: 아래 표면의
+// 입력은 통과가 아니라 **전달**이다(kit 의 input-forward 가 offscreen 셀에 하는 것과 같은 축).
+//
+// 실측 2026-08-08: 브라우저 세 종의 주소줄이 눌리지 않았다. 페이지는 전달이 걸려 있었고
+// 크롬(툴바·주소줄)에는 걸려 있지 않았다.
+await listen<{ x: number; y: number }>(event("pointer"), ({ payload }) => {
+  const el = document.elementFromPoint(payload.x, payload.y);
+  if (!(el instanceof HTMLElement)) return;
+  el.focus();
+  // 실클릭 등가 — mousedown 기반 위젯도 반응한다. 단발 click 만 보내면 그런 자리가 죽는다.
+  for (const type of ["mousedown", "mouseup", "click"]) {
+    el.dispatchEvent(new MouseEvent(type, { bubbles: true, composed: true, clientX: payload.x, clientY: payload.y }));
+  }
+});
+
 let slotResize: ResizeObserver | null = null;
 function observeSlots(): void {
   slotResize?.disconnect();
