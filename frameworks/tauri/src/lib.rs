@@ -97,6 +97,8 @@ fn window_set_background(window: tauri::Window, color: String) -> Result<(), Str
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 이 프로세스가 자기 코드에 닿은 시각 — 앞은 적재, 뒤는 프레임워크다(고칠 자리가 다르다).
+    boot_trace::mark_process_entered();
     let builder = tauri::Builder::default()
         .plugin(navigation_policy::init())
         .plugin(tauri_plugin_opener::init())
@@ -193,6 +195,7 @@ pub fn run() {
             // 사이드카가 없는 것처럼 보이지만 사실은 이 배선이 빠진 것이다.
             boot.step("home-init");
             sidecar::install(app.handle());
+            boot.step("sidecar-install");
             // updater 는 설정(plugins.updater: pubkey·endpoints)이 실린 빌드에서만 등록한다 —
             // 설정 없는 프로필에서 무조건 등록하면 부팅이 PluginInitialization(null)로 죽는다.
             // 설정이 conf 에 실리는 순간 자동 활성. 커맨드(update_check 등)는 플러그인 부재 시
@@ -209,6 +212,7 @@ pub fn run() {
             // PTY 매니저도 정체성을 생성자로 받는다 — 데몬 소켓·토큰·스테이징 바이너리가
             // 그 홈에서 파생되므로 home::init 뒤에 세운다. 빌더 체인(setup 이전)에서 읽으면
             // home.rs 폴백인 ~/.soksak 이 잡혀 dev 빌드가 릴리즈 홈의 데몬을 겨눈다.
+            boot.step("unit-installer");
             app.manage(PtyManager::new(identity::ambient()));
             // plugin service 매니저(PS9·PS11) — bind 원장을 읽어 상주 서비스를 올린다. 창-무관이라
             // 워크스페이스 창 유무와 상관없이 부팅 시 1회. 스폰은 스레드로(부팅 비차단).
@@ -242,6 +246,7 @@ pub fn run() {
             }
             // 백업 링 실패 고지에 쓸 앱 핸들을 심는다 — 이후 자동 백업 스냅샷 실패가 activity/알림으로
             // 드러난다(무음 폴백 금지). 데이터 개방보다 먼저 심어 첫 쓰기 신호부터 커버한다.
+            boot.step("service-manager");
             data::ring::set_app(app.handle());
             // **cored 를 저장소 소유 판정보다 먼저 세운다.**
             //
@@ -355,9 +360,11 @@ pub fn run() {
             }
             // 영속된 시간 기반(At/Every/Cron) 일정 재무장(crash 복구) — DB 열린 직후. 무상태 Reconcile 은
             // 플러그인이 activate 시 재등록한다. 일정 없으면 no-op(발화 스레드도 안 뜸).
-            boot.step("sidecar-install");
+            boot.step("data-open");
             schedule::reload_persisted(app.handle());
             boot.step("schedule-reload");
+            // 모은 도장을 원장으로 — 저장소가 열린 뒤라야 쓸 수 있다(home-init 이후).
+            boot.flush(app.handle());
             // 시크릿 볼트 — 경로 + KEK 출처(os_key OS 키체인) 주입. 투명 언락: 마스터 passphrase 없이
             // device KEK 로 부팅 시 자동 개방(env 무음 언락 경로 없음 — P0 제거). keyring 은 os_key 안에서만
             // 인스턴스화 → 여기 주입은 지연(첫 접근 때 키체인 접근). 경로·expect 확정을 DB open 뒤로 둔다.

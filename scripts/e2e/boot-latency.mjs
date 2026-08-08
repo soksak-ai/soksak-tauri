@@ -33,7 +33,9 @@ const respondedAtUnixMs = answer?.ok === true ? Date.now() : null;
 const ledger = await rpc("activity.recent", { limit: 40 }).catch(() => null);
 const steps = (ledger?.ok === true ? (ledger.data?.entries ?? []) : [])
   .filter((row) => row?.kind === "boot.step")
-  .map((row) => ({ step: row.payload?.step ?? "?", atUnixMs: Number(row.ts) }))
+  // 도장이 자기 시각을 싣고 있으면 그것을 쓴다 — 원장에 실린 시각은 **적힌 때**라, 모아
+  // 두었다 흘려보낸 단계는 전부 한 점으로 뭉친다.
+  .map((row) => ({ step: row.payload?.step ?? "?", atUnixMs: Number(row.payload?.atUnixMs ?? row.ts) }))
   .sort((left, right) => left.atUnixMs - right.atUnixMs);
 
 const verdict = bootLatencyVerdict({ startedAtUnixMs, respondedAtUnixMs, steps });

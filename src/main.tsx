@@ -102,6 +102,7 @@ function bootDone(): void {
 }
 
 async function boot(): Promise<void> {
+  bootStamp("module-loaded"); // 모듈 그래프가 다 실행된 시점 — 이 앞은 웹뷰의 적재 시간이다
   installErrorLedger(); // 오류 원장 — 부트 최서두(어떤 이후 예외도 침묵하지 못한다)
   // 고른 프레임워크가 자기 것을 건다 — 구현·장치·스타일. 무엇이 걸리는지 여기서 묻지 않는다.
   // 부팅 최서두여야 한다: 콘텐츠 뷰 구현이 안 걸린 채 플러그인이 뷰를 열면 이름을 달고 거절된다.

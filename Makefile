@@ -131,6 +131,10 @@ run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 	@# macOS GUI 번들의 수명 주인은 호출 셸이 아니라 LaunchServices다. 실행물을 `&`/nohup으로
 	@# 직접 띄우면 자동화 셸 종료와 함께 앱 호스트도 사라져 restart-dev가 거짓 성공한다.
 	@# -g는 창을 전면으로 가져오지 않고, --env/-i/-o가 dev 정체성과 진단면을 그대로 보존한다.
+	@# 띄운 시각은 띄운 쪽이 안다 — 부팅을 재는 자리가 이 값을 읽는다. 부르는 쪽에서 재면
+	@# make·node 기동 시간이 앱의 부팅으로 둔갑한다(실측 200ms 가량).
+	@node -e 'require("node:fs").writeFileSync(process.argv[1], String(Date.now()))' \
+	  "$(DEV_LOG_DIR)/launched-at-ms"
 	@open -n -g -i /dev/null \
 	  -o "$(DEV_LOG_DIR)/tauri-app.log" --stderr "$(DEV_LOG_DIR)/tauri-app.error.log" \
 	  --env SOKSAK_E2E_KEK=$(DEV_KEK) --env SOKSAK_VAULT_PATH=$(DEV_VAULT) \
@@ -521,6 +525,6 @@ boot-latency: ## 앱이 첫 명령에 답하기까지를 잰다(냉시동 — �
 	strays="$$(pgrep -f "$(DEV_EXECUTABLE)" 2>/dev/null || true)"; \
 	for stray in $$strays; do kill "$$stray" 2>/dev/null || true; done; \
 	for _ in $$(seq 1 50); do pgrep -f "$(DEV_EXECUTABLE)" >/dev/null 2>&1 || break; sleep 0.1; done; \
-	started="$$(node -e 'process.stdout.write(String(Date.now()))')"; \
 	$(MAKE) --no-print-directory run-dev >/dev/null; \
+	started="$$(cat "$(DEV_LOG_DIR)/launched-at-ms")"; \
 	SOKSAK_SOCKET="$$SOCKET" BOOT_STARTED_AT_UNIX_MS="$$started" node scripts/e2e/boot-latency.mjs

@@ -5,18 +5,39 @@
 //!
 //! 단계마다 자기 이름과 걸린 시간을 남긴다. 느린 단계는 그 이름으로 드러난다.
 
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+/// 이 프로세스가 자기 코드의 첫 줄에 닿은 시각. `run()` 최서두가 채운다.
+///
+/// 이것이 없으면 "띄운 시각 → setup" 한 덩어리만 보이는데, 그 안에는 성격이 다른 둘이 들어
+/// 있다: 실행물이 적재되기까지(LaunchServices·dyld)와 프레임워크가 setup 에 닿기까지다.
+/// 고칠 자리가 다르므로 갈라 재야 한다.
+static PROCESS_ENTERED: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+
+pub(crate) fn mark_process_entered() {
+    let _ = PROCESS_ENTERED.set(unix_ms());
+}
+
+fn unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 /// 한 부팅의 단계 원장. 첫 도장 시각을 기준으로 각 단계의 누적·구간을 잰다.
 pub(crate) struct BootTrace {
     started: Instant,
     last: Instant,
+    /// 찍은 도장과 **그 순간의 벽시계**. 원장은 저장소가 열린 뒤에야 쓸 수 있어 나중에 흘려보내는데,
+    /// 그때의 시각을 쓰면 전 단계가 한 점으로 뭉쳐 어디서 시간이 갔는지 사라진다.
+    stamps: Vec<(String, u64)>,
 }
 
 impl BootTrace {
     pub(crate) fn start() -> Self {
         let now = Instant::now();
-        Self { started: now, last: now }
+        Self { started: now, last: now, stamps: Vec::new() }
     }
 
     /// 이 단계가 끝났다고 도장을 찍는다. 직전 단계부터 걸린 시간과 부팅 시작부터의 누적을 낸다.
@@ -25,11 +46,33 @@ impl BootTrace {
         let span = now.duration_since(self.last);
         let total = now.duration_since(self.started);
         self.last = now;
+        self.stamps.push((name.to_string(), unix_ms()));
         eprintln!(
             "[boot] {name} +{:.2}s (누적 {:.2}s)",
             span.as_secs_f64(),
             total.as_secs_f64()
         );
+    }
+
+    /// 모아 둔 도장을 활동 원장으로 흘려보낸다 — 프론트 도장과 **한 축**에서 읽힌다.
+    ///
+    /// 원장은 저장소가 열린 뒤에만 쓸 수 있다. 그래서 찍을 때가 아니라 여기서 보내되, 각
+    /// 도장은 자기가 찍힌 시각을 싣는다(`atUnixMs`).
+    pub(crate) fn flush(&self, app: &tauri::AppHandle) {
+        let entered = PROCESS_ENTERED.get().copied().map(|at| ("process-enter".to_string(), at));
+        for (name, at) in entered.iter().chain(self.stamps.iter()) {
+            crate::activity::publish(
+                app,
+                "boot.step",
+                "boot",
+                serde_json::json!({
+                    "step": format!("rust:{name}"),
+                    "atUnixMs": at,
+                    "window": "main",
+                    "message": format!("· boot rust:{name}"),
+                }),
+            );
+        }
     }
 }
 
