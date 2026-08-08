@@ -652,6 +652,7 @@ export const nativeHost: ContentViewHost = {
   }),
   history: (label, delta) => call("webview_history", { label, delta }),
   stop: (label) => call("webview_stop", { label }),
+  reload: (label, ignoreCache) => call("webview_reload", { label, ignoreCache: !!ignoreCache }),
   zoom: (label, factor) => call("webview_zoom_view", { label, factor }),
   devtools: (label) => call("webview_devtools", { label }),
   evalJs: (label, js) => call("webview_eval", { label, js }),

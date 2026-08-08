@@ -1809,6 +1809,39 @@ pub fn webview_history(app: AppHandle, label: String, delta: i32) -> Result<(), 
     Ok(())
 }
 
+/// 새로고침 — WKWebView reload.
+///
+/// 없어서 플러그인이 **현재 URL 로 다시 이동**해 흉내내고 있었다. 그건 새로고침이 아니라 새
+/// 이동이라 이력이 한 칸 더 쌓이고, 뒤로 갔던 자리에서 새로고침하면 앞 자리로 되돌아간다 —
+/// 실측 2026-08-08: 셋 중 하나만 새로고침 뒤 `len` 이 2 에서 3 이 되고 페이지가 바뀌었다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn webview_reload(app: AppHandle, label: String, ignore_cache: Option<bool>) -> Result<(), String> {
+    let wv = registered_webview(&app, &label).ok_or_else(|| format!("webview 없음: {label}"))?;
+    let hard = ignore_cache.unwrap_or(false);
+    wv.with_webview(move |pw| unsafe {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        let wk = pw.inner() as *mut AnyObject;
+        if wk.is_null() {
+            return;
+        }
+        if hard {
+            let _: () = msg_send![&*wk, reloadFromOrigin];
+        } else {
+            let _: () = msg_send![&*wk, reload];
+        }
+    })
+    .map_err(|e| e.to_string())
+}
+
+// 이 플랫폼에는 아직 이 통로가 없다 — 이름을 달고 거절한다(조용한 성공 금지).
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn webview_reload(_app: AppHandle, _label: String, _ignore_cache: Option<bool>) -> Result<(), String> {
+    Err("webview_reload는 현재 macOS 구현이 필요합니다".into())
+}
+
 // 로딩 정지 — WKWebView stopLoading. 툴바 reload↔stop 토글(soksak-browser-kit nav-state)용.
 #[tauri::command]
 pub fn webview_stop(app: AppHandle, label: String) -> Result<(), String> {

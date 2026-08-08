@@ -485,6 +485,8 @@ export interface SoksakPluginApi {
     history: (label: string, delta: number) => Promise<void>;
     /** 로딩 정지(WKWebView stopLoading) — 툴바 reload↔stop 토글용. */
     stop?: (label: string) => Promise<void>;
+    /** 새로고침 — 현재 URL 로 다시 이동하는 것과 다르다(그건 이력을 한 칸 더 쌓는다). */
+    reload: (label: string, ignoreCache?: boolean) => Promise<void>;
     /** OS 인스펙터(devtools) 토글 → 열림 여부. */
     devtools: (label: string) => Promise<boolean>;
     /** 페이지에서 JS 실행 후 결과 문자열 반환(AI/E2E DOM 제어). macOS 한정. */
@@ -1926,6 +1928,7 @@ export function buildPluginApi(
             contentViewHost().openWindow(url),
           history: (label, delta) => contentViewHost().history(label, delta),
           stop: (label) => contentViewHost().stop(label),
+          reload: (label, ignoreCache) => contentViewHost().reload(label, ignoreCache),
           devtools: (label) => contentViewHost().devtools(label),
           eval: (label, js) => contentViewHost().evalJs(label, js),
           injectScript: (label, code, phase) =>

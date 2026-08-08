@@ -280,6 +280,11 @@ export const domHost: ContentViewHost = {
   async stop(label) {
     (await onReady<() => void>(label, "stop"))();
   },
+  // 태그가 이미 두 갈래를 준다 — 캐시를 버리는 쪽은 이름이 다르다.
+  async reload(label, ignoreCache) {
+    const method = ignoreCache ? "reloadIgnoringCache" : "reload";
+    (await onReady<() => void>(label, method))();
+  },
   async zoom(label, factor) {
     // 태그는 배율이 아니라 레벨을 받는다(level = log1.2(factor)) — 번역은 여기서 한다.
     (await onReady<(l: number) => void>(label, "setZoomLevel"))(

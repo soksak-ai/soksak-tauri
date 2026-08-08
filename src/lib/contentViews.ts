@@ -52,6 +52,11 @@ export interface ContentViewHost {
   chromePresentationSettled(): Promise<void>;
   history(label: string, delta: number): Promise<void>;
   stop(label: string): Promise<void>;
+  /** 새로고침 — 다시 이동이 아니다.
+   *
+   * 현재 URL 로 다시 이동해 흉내내면 이력이 한 칸 더 쌓이고, 뒤로 갔던 자리에서 새로고침하면
+   * 앞 자리로 되돌아간다(실측 2026-08-08). `ignoreCache` 는 캐시를 버리고 원본에서 받는다. */
+  reload(label: string, ignoreCache?: boolean): Promise<void>;
   zoom(label: string, factor: number): Promise<number>;
   devtools(label: string): Promise<boolean>;
   evalJs(label: string, js: string): Promise<string>;

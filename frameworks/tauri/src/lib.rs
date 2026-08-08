@@ -785,6 +785,8 @@ pub fn run() {
             webview::webview_devtools,
             webview::webview_history,
             webview::webview_stop,
+            webview::webview_reload,
+            webview::webview_reload,
             webview::webview_visible,
             webview::webview_alive,
             webview::webview_wait_loaded,
