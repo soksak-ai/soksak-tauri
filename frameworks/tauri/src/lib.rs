@@ -1,6 +1,7 @@
 mod activity;
 mod ai_session;
 mod app_nap;
+mod boot_trace;
 // 이 프레임워크가 cored 의 창 호스트가 되는 자리. `pub` 인 이유는 검증이다 — 붙는 계약은
 // 소켓 위에서 재야 하고(tests/attaches_to_cored.rs), 통합 검사는 이 크레이트 **밖**에서 돈다.
 // 배달 통로는 유닉스 소켓이라 cored 자신과 같은 축으로 가른다(cored 는 unix 전용이다).
@@ -170,6 +171,10 @@ pub fn run() {
     });
     builder
         .setup(|app| {
+            // 부팅 단계 계측 — 어디서 시간이 가는지 기계가 답한다(실측 2026-08-08: 명령이
+            // 열리기까지 10.2 초였는데 그 구간을 재는 자리가 없었다).
+            let mut boot = boot_trace::BootTrace::start();
+            boot.step("setup-enter");
             // Configured windows are born hidden. Register this exact native lifetime before any
             // native/renderer work so no pre-composition frame can become externally visible.
             let main_startup = window::register_startup_window(app.handle(), "main", true)
@@ -177,13 +182,16 @@ pub fn run() {
             window::bind_startup_native_window(app.handle(), &main_startup)
                 .map_err(std::io::Error::other)?;
             // 가려진 창도 계속 그린다 — 앞으로 내지 않고도 잴 수 있게 하는 자기 선언.
+            boot.step("startup-window");
             app_nap::hold();
             // identity 홈 확정 — 모든 경로(데이터·플러그인·사이드카·테마·프로젝트·소켓·시크릿)가
             // 이 값에서 파생되므로 어떤 경로 사용보다 먼저 1회 고정한다(home.rs 원칙).
+            boot.step("app-nap");
             home::init(&app.config().identifier);
             // 사이드카 호스팅에 이 프레임워크의 셋(표면·메인스레드·사건 싱크)을 건넨다.
             // 이것이 없으면 첫 open 이 적재 직전에 "프레임워크 미설치"로 죽는다 — 그 실패는
             // 사이드카가 없는 것처럼 보이지만 사실은 이 배선이 빠진 것이다.
+            boot.step("home-init");
             sidecar::install(app.handle());
             // updater 는 설정(plugins.updater: pubkey·endpoints)이 실린 빌드에서만 등록한다 —
             // 설정 없는 프로필에서 무조건 등록하면 부팅이 PluginInitialization(null)로 죽는다.
@@ -347,7 +355,9 @@ pub fn run() {
             }
             // 영속된 시간 기반(At/Every/Cron) 일정 재무장(crash 복구) — DB 열린 직후. 무상태 Reconcile 은
             // 플러그인이 activate 시 재등록한다. 일정 없으면 no-op(발화 스레드도 안 뜸).
+            boot.step("sidecar-install");
             schedule::reload_persisted(app.handle());
+            boot.step("schedule-reload");
             // 시크릿 볼트 — 경로 + KEK 출처(os_key OS 키체인) 주입. 투명 언락: 마스터 passphrase 없이
             // device KEK 로 부팅 시 자동 개방(env 무음 언락 경로 없음 — P0 제거). keyring 은 os_key 안에서만
             // 인스턴스화 → 여기 주입은 지연(첫 접근 때 키체인 접근). 경로·expect 확정을 DB open 뒤로 둔다.

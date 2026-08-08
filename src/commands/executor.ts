@@ -1,6 +1,7 @@
 // 명령 실행기: Rust 소켓 서버가 emit 한 cmd-request 를 registry 로 실행하고
 // invoke(cmd_result) 로 회신한다(요청 id 매칭). 앱 시작 시 1회 startExecutor().
 
+import { invoke as frameworkInvoke } from "../framework";
 import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 import { currentWindowLabel } from "../lib/webviewLabels";
@@ -58,6 +59,20 @@ export function markCommandHostReady(): void {
 
 export function startExecutor(): void {
   if (boot.started) return;
+  // 명령 수신이 열리기까지 실측 10 초가 걸렸는데 그 구간을 재는 자리가 없었다(2026-08-08).
+  // 카탈로그 등록과 리스너 설치 사이가 어디서 갈리는지 기계가 답한다.
+  const executorAt = performance.now();
+  const executorStep = (name: string) => {
+    // 웹뷰 콘솔은 소켓으로 못 읽는다 — 활동 원장에 실어야 기계가 답한다(boot.step 과 같은 축).
+    void frameworkInvoke("activity_publish", {
+      kind: "boot.step",
+      source: "boot",
+      payload: {
+        step: `executor:${name}`,
+        message: `· executor ${name} +${(performance.now() - executorAt).toFixed(0)}ms`,
+      },
+    }).catch(() => {});
+  };
   boot.started = true;
   registerCatalog();
   // 원격 confirm 데스크톱 사람 게이트(remote.confirm) — remote-iroh 사이드카가 destructive 결정을
@@ -83,6 +98,7 @@ export function startExecutor(): void {
   });
   // 이 창에 emit_to 된 cmd-request 만 받는다(전역 listen 이면 emit_to(다른 창) 도 받아 명령이
   // 두 창에서 중복 실행 → 창별 독립 붕괴). lib/windowEvents 머리말 참조.
+  executorStep("catalog-registered");
   listenThisWindow<CmdRequest>("cmd-request", async (e) => {
     const { id, method, params, pane, window, parent, origin } = e.payload;
     // 호스트 미준비 = 플러그인 활성화 진행 중. 게이트는 **미등록 명령만** 세운다 — 이미
@@ -107,4 +123,5 @@ export function startExecutor(): void {
       (err) => console.error("cmd_result 회신 실패:", err),
     );
   });
+  executorStep("listener-installed");
 }
