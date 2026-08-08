@@ -126,6 +126,12 @@ export interface PluginViewPlacementFrame {
 
 export interface PluginViewNodeFrame extends PluginViewSlotFrame {
   node: string;
+  /** 이 노드가 **사는** realm — renderer 문서다.
+   *
+   * `label` 은 그 뷰의 콘텐츠 표면이고 노드는 거기 살지 않는다. 주인을 아는 쪽이 이름을 대야
+   * 주소 하나로 관측도 조작도 같은 문서에 닿는다(실측 2026-08-08: 콘텐츠 표면 이름으로 지은
+   * 주소가 가리킨 문서에는 `[data-node]` 가 하나도 없었다). */
+  realm: string;
   /** 노출된 form node의 실제 child-renderer 현재 상태. 좌표 projection이 값을 지어내지 않는다. */
   control: { kind: "input" | "textarea" | "select"; value: string } | null;
 }

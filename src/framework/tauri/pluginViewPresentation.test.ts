@@ -185,17 +185,18 @@ describe("Tauri plugin renderer RPC surface", () => {
   it("child toolbar도 같은 탭 주소 아래 공개 측정 DOM으로 투영한다", () => {
     const container = document.createElement("div");
     const projected = projectPluginViewNode(container, {
-      label: "b-main-tab-1", node: "toolbar", x: 4, y: 8, w: 300, h: 40, rootW: 400, rootH: 260,
+      label: "b-main-tab-1", realm: "pv-realm", node: "toolbar", x: 4, y: 8, w: 300, h: 40, rootW: 400, rootH: 260,
       revision: 1, reportedAtUnixMs: 1, control: null,
     });
-    expect(projected.dataset.node).toBe("tauri/plugin-view/b-main-tab-1/toolbar");
+    // 노드는 콘텐츠 표면이 아니라 renderer 문서에 산다 — 주소가 그 realm 을 가리킨다.
+    expect(projected.dataset.node).toBe("tauri/plugin-view/pv-realm/toolbar");
     expect(projected.style.top).toBe("8px");
   });
 
   it("child form node의 종류와 현재 value를 공개 projection에 함께 투영한다", () => {
     const container = document.createElement("div");
     const projected = projectPluginViewNode(container, {
-      label: "b-main-tab-1", node: "urlbar", x: 4, y: 8, w: 300, h: 40,
+      label: "b-main-tab-1", realm: "pv-realm", node: "urlbar", x: 4, y: 8, w: 300, h: 40,
       rootW: 400, rootH: 260, revision: 1, reportedAtUnixMs: 1,
       control: { kind: "input", value: "https://fixture.invalid/" },
     });

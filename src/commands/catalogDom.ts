@@ -9,7 +9,7 @@
 import { moduleState } from "../lib/moduleState";
 import { currentWindow } from "../framework";
 import { browserLabel, currentWindowLabel } from "../lib/webviewLabels";
-import { contentViewHost } from "../lib/contentViews";
+import { contentViewHost, hasContentViewHost } from "../lib/contentViews";
 import { parseAddress, isParseError } from "./address";
 import { scanNodes, type ScannedNode } from "../plugins/nodeScan";
 import { register } from "./registry";
@@ -893,8 +893,56 @@ function projectedRealmRefusal(el: Element, addr: string) {
     code: "OTHER_REALM" as const,
     message:
       `이 노드는 다른 realm 의 투영입니다(plugin-view) — 호스트에 꽂은 사건은 그 안에 닿지 않습니다: ${addr}. ` +
-      "그 realm 으로 조작을 넘기는 길은 아직 없습니다(관측은 ui.tree·ui.measure 로 됩니다).",
+      "이 명령은 아직 그 realm 으로 가는 길이 없습니다(클릭·채우기는 넘어갑니다).",
   };
+}
+
+/** 투영 주소가 밝히는 realm 과 그 안의 노드 — `tauri/plugin-view/<realm>/<node>`. */
+function projectedTarget(el: Element): { realm: string; node: string } | null {
+  if (!projectedRealmNode(el)) return null;
+  const declared = (el as HTMLElement).dataset.node ?? "";
+  const m = /^[^/]+\/plugin-view\/([^/]+)\/(.+)$/.exec(declared);
+  return m ? { realm: m[1], node: m[2] } : null;
+}
+
+/**
+ * 투영 노드에 대한 조작을 **그 노드가 사는 realm 에서** 한다.
+ *
+ * 호스트의 투영은 투명하고 사건을 안 받는다 — 거기 꽂으면 아무 일도 안 일어난다. 진짜 노드는
+ * 자식 문서에 살고, 그 문서로 들어가는 길은 계약에 이미 있다(`evalJs`·`typeText`). 없던 것은
+ * 주소가 **어느 문서를 가리키는지**였다: 여태 콘텐츠 표면 이름을 실어 노드가 없는 곳을 짚었다.
+ */
+async function inProjectedRealm(
+  el: Element,
+  addr: string,
+  action: { kind: "click" } | { kind: "fill"; value: string },
+) {
+  const target = projectedTarget(el);
+  if (target === null) return null;
+  if (!hasContentViewHost()) {
+    return {
+      ok: false as const,
+      code: "OTHER_REALM" as const,
+      message: `이 노드는 다른 realm 의 투영인데 그리로 가는 길이 이 프레임워크엔 없습니다: ${addr}`,
+    };
+  }
+  const host = contentViewHost();
+  const pick = `document.querySelector(${JSON.stringify(`[data-node="${target.node}"]`)})`;
+  if (action.kind === "click") {
+    const done = await host.evalJs(target.realm, `const el = ${pick}; if (!el) return "none"; el.focus(); el.click(); return "ok";`);
+    if (!String(done).includes("ok")) {
+      return { ok: false as const, code: "NOT_EXPOSED" as const, message: `그 realm 에 노드가 없습니다: ${addr}` };
+    }
+    return { clicked: true, realm: target.realm, address: addr };
+  }
+  // 값을 대입하지 않는다 — 그 realm 의 코드는 자기 입력 사건으로만 상태를 갱신한다. 포커스하고
+  // 기존 값을 고른 뒤 네이티브 입력으로 넣으면 사람이 친 것과 같은 경로가 된다.
+  const ready = await host.evalJs(target.realm, `const el = ${pick}; if (!el) return "none"; el.focus(); if (el.select) el.select(); return "ok";`);
+  if (!String(ready).includes("ok")) {
+    return { ok: false as const, code: "NOT_EXPOSED" as const, message: `그 realm 에 노드가 없습니다: ${addr}` };
+  }
+  await host.typeText(target.realm, action.value);
+  return { filled: true, realm: target.realm, address: addr };
 }
 
   register("ui.input.click", {
@@ -964,7 +1012,11 @@ function projectedRealmRefusal(el: Element, addr: string) {
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
       // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
-      { const other = projectedRealmRefusal(found.el, addr); if (other) return other; }
+      if (projectedRealmNode(found.el)) {
+        // 투영일 때만 기다린다 — 평범한 호스트 노드까지 await 를 태우면 그 뒤 순서가 바뀐다.
+        const routed = await inProjectedRealm(found.el, addr, { kind: "click" });
+        if (routed) return routed;
+      }
       const el = found.el;
       // 실제 클릭과 등가 시퀀스 — el.click()(click 단발)은 mousedown 기반 요소(사이드바 탭
       // 드래그-선택 등)를 못 누른다. dblclick 커맨드와 동일 패턴의 1라운드.
@@ -1823,7 +1875,11 @@ function projectedRealmRefusal(el: Element, addr: string) {
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
       // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
-      { const other = projectedRealmRefusal(found.el, addr); if (other) return other; }
+      if (projectedRealmNode(found.el)) {
+        // 투영일 때만 기다린다 — 평범한 호스트 노드까지 await 를 태우면 그 뒤 순서가 바뀐다.
+        const routed = await inProjectedRealm(found.el, addr, { kind: "fill", value: p.value as string });
+        if (routed) return routed;
+      }
       const el = found.el;
       // contenteditable 노드 — 인라인 편집면(blur 확정 계약)도 같은 명령으로 채운다.
       // textContent 교체 후 input + focusout(React onBlur 는 focusout 을 듣는다)으로 확정을 유발.

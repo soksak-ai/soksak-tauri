@@ -328,7 +328,9 @@ export function projectPluginViewNode(
   existing?: HTMLElement,
 ): HTMLElement {
   const element = existing ?? document.createElement("div");
-  element.dataset.node = `tauri/plugin-view/${frame.label}/${frame.node}`;
+  // 주소는 노드가 **사는** realm 을 가리킨다 — 콘텐츠 표면 이름으로 지으면 조작이 노드 없는
+  // 문서로 간다.
+  element.dataset.node = `tauri/plugin-view/${frame.realm}/${frame.node}`;
   if (frame.control) {
     element.dataset.formControl = frame.control.kind;
     element.dataset.formValue = frame.control.value;

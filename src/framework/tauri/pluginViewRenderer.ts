@@ -85,6 +85,9 @@ function reportSlots(): void {
       const rect = element.getBoundingClientRect();
       const frame: PluginViewNodeFrame = {
         label: activeLabel, node,
+        // 노드는 이 문서에 산다 — 콘텐츠 표면이 아니라 여기가 주인이다. 위에서 이름 없이는
+        // 시작하지 못하므로(throw) 여기서는 값이 있다.
+        realm: renderer as string,
         control: nodeControlState(element),
         x: Math.round(rect.left), y: Math.round(rect.top),
         w: Math.max(1, Math.round(rect.right) - Math.round(rect.left)),
