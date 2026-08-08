@@ -23,6 +23,7 @@ import {
   prepareNativeContentViewMove,
 } from "./contentViews";
 import { adoptFrameworkStyles } from "../styles";
+import { installContentInputForwarding } from "./contentInputForward";
 import { registerContentViewHost } from "../../lib/contentViews";
 import { registerLayoutTransitionHost } from "../../lib/layoutTransitionHost";
 import { railTravelDeclaredMs } from "../../lib/railMotion";
@@ -643,6 +644,10 @@ export async function installTauri(): Promise<void> {
   installPluginViewPresentation();
   // 공개 슬롯 → OS 자식 bounds/가시성/AppKit frame 전환. 플러그인은 슬롯만 선언한다.
   installNativeContentViewComposition();
+  // 사람이 페이지를 누르면 그 페이지가 받는다 — 콘텐츠가 메인 웹뷰 아래에 깔린 이 프레임워크에서는
+  // 그 사건이 여기로 오고, 넘기지 않으면 사람 경로만 죽어 있다(실측 2026-08-08: 명령으로 넣은
+  // 클릭은 링크를 따라갔는데 손으로 누르면 아무 일도 안 났다).
+  installContentInputForwarding(document);
   // 홀 CSS — 셀렉터에 프레임워크 이름이 없다. 안 걸리면 그 규칙은 애초에 문서에 없다.
   adoptFrameworkStyles("tauri", styles);
   // 공개 슬롯을 Tauri 전용 합성 표식으로 투영한다. 공통 DOM 은 hole 개념을 갖지 않는다.
