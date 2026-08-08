@@ -808,19 +808,33 @@ export async function pluginViewCompositionStatus() {
  * `presented=false`로 답한다. 여기서 예외로 바꾸면 정착 하나 때문에 거래 자체가 죽고, 남는 것은
  * 사실이 아니라 사고다. 판정은 부른 쪽이 한다.
  */
+/** 직전 재보고의 분해 — 자리 확정과 자식 왕복 중 어느 쪽이 시간을 쓰는가. */
+let lastSettleCost = { frameMs: 0, reportMs: 0, members: 0 };
+
+export function pluginViewSettleCost() {
+  return lastSettleCost;
+}
+
 export async function settlePluginViewComposition(timeoutMs = 10_000): Promise<void> {
   const views = [...state.views.values()].filter((view) => view.grouped && !view.disposed);
+  const cost = { frameMs: 0, reportMs: 0, members: 0 };
   await Promise.all(views.map(async (view) => {
     // Main renderer가 소유한 host frame을 현재 공개 DOM에 먼저 확정한다.
+    const frameAt = performance.now();
     await syncPaneFrame(view);
+    cost.frameMs = Math.max(cost.frameMs, Math.round(performance.now() - frameAt));
     const root = rectOf(view.container);
     // waiter를 먼저 등록해 즉시 돌아오는 child report와의 경쟁을 닫는다. 비전면 WebKit의
     // ResizeObserver에 기대지 않고 동일 reporter를 명시적 사건으로 한 번 실행한다.
     const committed = [...view.members].map((label) =>
       view.slots.waitCommittedRoot(label, root.w, root.h, timeoutMs));
+    const reportAt = performance.now();
     await emitTo(view.renderer, event(view.renderer, "measure"), null);
     await Promise.allSettled(committed);
+    cost.reportMs = Math.max(cost.reportMs, Math.round(performance.now() - reportAt));
+    cost.members = Math.max(cost.members, committed.length);
   }));
+  lastSettleCost = cost;
 }
 
 /** 같은 배리어로 정착시킨 뒤 live DOM↔native를 판정한다. 안 맞으면 그 delta를 이름으로 던진다. */
@@ -934,9 +948,18 @@ const host: PluginViewPresentationHost = {
     const at = performance.now();
     await Promise.all(views.map((view) => view.visibility.settled()));
     const visibilityMs = Math.round(performance.now() - at);
-    const compositionAt = performance.now();
-    await awaitPluginViewComposition();
-    const compositionMs = Math.round(performance.now() - compositionAt);
+    // 합성 대기는 두 일이다: 자식이 자기 자리를 다시 재 보고할 때까지 기다리는 것과, 그 뒤
+    // DOM↔네이티브가 맞는지 판정하는 것. 합쳐 두면 어느 쪽이 시간을 쓰는지 못 가른다.
+    const settleAt = performance.now();
+    await settlePluginViewComposition();
+    const settleMs = Math.round(performance.now() - settleAt);
+    const verdictAt = performance.now();
+    const verdict = await pluginViewCompositionStatus();
+    if (verdict.verdict !== "green") {
+      throw new Error(`pane composition commit 불일치: ${JSON.stringify(verdict)}`);
+    }
+    const verdictMs = Math.round(performance.now() - verdictAt);
+    const compositionMs = settleMs + verdictMs;
     const presentedAt = performance.now();
     // 무엇이 지금 화면에 있는가는 문서의 선언이 안다 — 뷰의 기억만 믿으면 사라진 표면을
     // 계속 기다린다(실측 2026-08-09: 탭 목록에 없는 표면 하나를 100ms 기다리고 있었다).
@@ -958,6 +981,8 @@ const host: PluginViewPresentationHost = {
     lastPresentationCost = {
       visibilityMs,
       compositionMs,
+      compositionSettleMs: settleMs,
+      compositionVerdictMs: verdictMs,
       presentedMs: Math.round(performance.now() - presentedAt),
       each: each.sort((left, right) => right[1] - left[1]),
     };
@@ -968,6 +993,8 @@ const host: PluginViewPresentationHost = {
 let lastPresentationCost: {
   visibilityMs: number;
   compositionMs: number;
+  compositionSettleMs: number;
+  compositionVerdictMs: number;
   presentedMs: number;
   each: Array<[string, number]>;
 } | null = null;
