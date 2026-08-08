@@ -7,10 +7,11 @@
 // 노출(data-node)되지 않은 요소는 주소 트리에 없어 접근 불가 → 명확한 에러(추측 0).
 
 import { moduleState } from "../lib/moduleState";
-import { currentWindow } from "../framework";
+import { currentWindow, invoke } from "../framework";
 import { browserLabel, currentWindowLabel } from "../lib/webviewLabels";
 import { contentViewHost, hasContentViewHost, type SurfacePointerInput } from "../lib/contentViews";
 import { surfaceInputProvider } from "../lib/surfaceInputProviders";
+import { surfacesOutsideWindow, type SurfaceFrameFact } from "../lib/surfaceInsideWindow";
 import { parseAddress, isParseError } from "./address";
 import { scanNodes, type ScannedNode } from "../plugins/nodeScan";
 import { register } from "./registry";
@@ -1546,7 +1547,7 @@ async function inProjectedRealm(
         total: String((d.checks as unknown[] | undefined)?.length ?? 0),
       }),
     examples: ["ui.verify"],
-    handler: () => {
+    handler: async () => {
       const scanned = collectExposed();
       const checks: { name: string; ok: boolean; detail: string }[] = [];
 
@@ -1601,6 +1602,42 @@ async function inProjectedRealm(
         ok: wall === timer,
         detail: `화면 ${wall}ms / 위상 ${timer}ms`,
       });
+
+      // A? 표면은 창 안에 있다 — **문서 밖 표면은 DOM 검사로 안 잡힌다.**
+      //
+      // 사고 2026-08-09: 콘텐츠 표면들이 창 밖으로 흩어져 화면 오른쪽에 겹쳐 떠 있었는데 이
+      // 판정은 그 순간에도 통과를 답했다. 사람이 스크린샷을 보고 말할 때까지 아무도 몰랐다.
+      // 기하는 기하로 판정한다.
+      try {
+        // 프레임워크의 엔진 표면 관측을 그대로 읽는다 — webview.surfaces 가 쓰는 같은 자리다.
+        const surfaces = await invoke<{ surfaces?: SurfaceFrameFact[] }>("engine_surface_stats");
+        const root = document.documentElement;
+        const outside = surfacesOutsideWindow(surfaces?.surfaces ?? [], {
+          w: root.clientWidth,
+          h: root.clientHeight,
+        });
+        // **몇 개를 봤는지 함께 적는다.** 빈 목록도 "전부 안에 있다" 로 통과한다 — 관측이
+        // 끊긴 것과 정상인 것이 같은 답이 되면 이 축은 무엇이 깨져도 영원히 통과한다.
+        const visible = (surfaces?.surfaces ?? []).filter(
+          (row) => row.hidden !== true && row.effectivelyHidden !== true,
+        ).length;
+        checks.push({
+          name: "surface-inside-window",
+          ok: outside.length === 0,
+          detail: outside.length === 0
+            ? `보이는 표면 ${visible}개가 전부 창 안에 있다`
+            : outside
+                .map((row) => `${row.label} 이(가) 창 밖으로 ${JSON.stringify(row.overflow)}`)
+                .join(", "),
+        });
+      } catch (error) {
+        // 못 읽은 것을 통과로 읽지 않는다 — 이 축은 "모른다" 를 실패로 답한다.
+        checks.push({
+          name: "surface-inside-window",
+          ok: false,
+          detail: `표면 기하를 읽지 못했다: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
 
       const failed = checks.filter((c) => !c.ok);
       // 판정은 payload 의 passed 다 — ok 는 봉투 예약키라 여기 실으면 삼켜지고, 호출자는
