@@ -165,6 +165,8 @@ export interface CommandSpec {
     | "AMBIGUOUS_TARGET"
     // 이 라벨을 든 창이 여럿이라 부작용이 서로를 덮는다 — 대상이 없는 것이 아니라 **여럿**이다.
     | "AMBIGUOUS_HOST"
+    // 노드는 보이는데 그 실체가 다른 realm 에 산다 — 관측은 되고 조작은 그 realm 으로 가야 한다.
+    | "OTHER_REALM"
     | "ALREADY_EXISTS"
     // 노드는 노출돼 있는데 실제 rect가 화면 밖이다 — 캡처·측정할 픽셀이 없다.
     | "OFFSCREEN"

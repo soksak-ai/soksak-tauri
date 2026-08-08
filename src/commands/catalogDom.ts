@@ -893,7 +893,7 @@ function projectedRealmRefusal(el: Element, addr: string) {
     code: "OTHER_REALM" as const,
     message:
       `이 노드는 다른 realm 의 투영입니다(plugin-view) — 호스트에 꽂은 사건은 그 안에 닿지 않습니다: ${addr}. ` +
-      "그 뷰를 소유한 플러그인의 명령으로 조작하십시오(state.commands 로 그 뷰의 표면을 찾습니다).",
+      "그 realm 으로 조작을 넘기는 길은 아직 없습니다(관측은 ui.tree·ui.measure 로 됩니다).",
   };
 }
 
@@ -1813,12 +1813,12 @@ function projectedRealmRefusal(el: Element, addr: string) {
     },
     returns: "{ filled, address }",
     message: () => tmsg("msg.ui.input.fill"),
-    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS", "OTHER_REALM"],
     danger: "inject",
     examples: [
       'ui.input.fill \'{"address":"win/main/content/view/x/node/url-input","value":"/path/clip.mp4"}\'',
     ],
-    handler: (p) => {
+    handler: async (p) => {
       const addr = p.address as string;
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
