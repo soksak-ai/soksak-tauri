@@ -340,7 +340,10 @@ fn route(req: control::Request) -> Value {
 
     // 봉투는 코어가 만든다 — 여기서 리터럴로 적으면 필드를 빠뜨려도 오류가 안 나고, 빠진
     // 값은 실패가 아니라 소멸한다(soksak_core::control::deliver_envelope 머리말).
-    let push = soksak_core::control::deliver_envelope(id, &req, &target);
+    // 몇에게 가는지 **밀기 전에** 센다 — 받는 쪽이 자기가 유일한 수행자인지 알아야, 부작용이
+    // 한 자리에 남는 명령이 서로를 덮으면서 둘 다 성공을 답하는 일이 없다.
+    let performers = owners_of(&target, &req.method);
+    let push = soksak_core::control::deliver_envelope(id, &req, &target, performers);
     // 그 창을 가진 호스트로만 민다. 아무 호스트에나 밀면 남의 프레임워크 창에서 명령이 돌고
     // 성공을 답한다 — 그 오답은 오류로 보이지 않는다.
     // 그 이름을 든 **전부**에게 민다.
@@ -414,6 +417,21 @@ enum Delivered {
 ///
 /// 겹침은 우연이 아니다: 창 복원은 라벨을 새로 만들지 않고 저장된 `w-<uuid>` 를 의도적으로
 /// 되쓴다(NAMING 4b). 한 홈을 두 프레임워크가 보면 같은 슬롯을 각자 되살린다.
+/// 이 라벨을 든 호스트 수 — 봉투가 "몇에게 가는가" 를 실으려면 **밀기 전에** 알아야 한다.
+///
+/// 주인이 답하는 이름은 한 곳만 수행한다(아래 `once` 와 같은 규칙) — 그 경우 수행자는 하나다.
+fn owners_of(label: &str, method: &str) -> usize {
+    if is_owner_answered(method) {
+        return 1;
+    }
+    hosts()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .filter(|h| h.live.iter().any(|l| l == label))
+        .count()
+}
+
 fn push_to_owner(label: &str, v: &Value) -> Delivered {
     let g = hosts().lock().unwrap_or_else(|e| e.into_inner());
     // 답이 주인의 것이면 **한 곳에만** 보낸다. 어느 창에서 돌든 같은 답이므로 여럿에게 보내는

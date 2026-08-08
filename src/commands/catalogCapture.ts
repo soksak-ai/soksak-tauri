@@ -350,7 +350,7 @@ export function registerCaptureCatalog(): void {
         { cmd: "space.list", why: tmsg("hint.flow.snapshot.switch") },
       ];
     },
-    errors: ["INVALID_PARAMS", "OFFSCREEN", "TARGET_NOT_FOUND", "NOT_EXPOSED"],
+    errors: ["INVALID_PARAMS", "OFFSCREEN", "TARGET_NOT_FOUND", "NOT_EXPOSED", "AMBIGUOUS_HOST"],
     examples: [
       "window.snapshot",
       'window.snapshot \'{"path":"/tmp/shot.png"}\'',
@@ -358,7 +358,25 @@ export function registerCaptureCatalog(): void {
       'window.snapshot \'{"rect":{"x":100,"y":80,"w":400,"h":300},"path":"/tmp/crop.png"}\'',
       'window.snapshot \'{"node":"win/main/proj/p1/chrome/tab/space/0","path":"/tmp/tab.png"}\'',
     ],
-    handler: async (p) => {
+    handler: async (p, ctx) => {
+      // **한 자리에 둘이 쓰면 하나는 사라진다.**
+      //
+      // 같은 라벨을 두 프레임워크가 들면 이 요청은 둘 다에게 온다(고를 수 없으면 전부에게 —
+      // 그것이 옳다). 그런데 부르는 쪽이 파일 자리를 지정했으면 수행자가 둘일 때 나중 쪽이
+      // 먼저 쪽을 덮고, 답은 둘 다 OK 다 — 실측 2026-08-08: 답 두 개에 파일 하나였고 어느
+      // 답에도 그 사실이 없었다. 성공을 답한 일이 남지 않는 것은 성공이 아니다.
+      //
+      // 거절이 아니라 **주소를 좁히라는 안내**다: 창을 지목하거나 base64 로 받으면 각 답이
+      // 자기 그림을 들고 온다.
+      if (p.path !== undefined && (ctx?.hosts ?? 1) > 1) {
+        return {
+          ok: false,
+          code: "AMBIGUOUS_HOST",
+          message:
+            `이 이름의 창을 ${ctx?.hosts}곳이 들고 있어 그 경로에 서로를 덮어씁니다 — ` +
+            "창을 지목하거나 base64 로 받으십시오.",
+        };
+      }
       // 캡처는 명령 — 창이 앞이든 뒤든 정확한 최종 프레임을 낸다. 비전면 창은 timeline 정지로
       // 진입 애니메이션이 중간 프레임에 갇히므로(arm_capture 의 가림해제만으론 timeline 이 안
       // 흐른다), 캡처 직전 유한 애니메이션을 명시 정착한다. 모든 캡처 경로 공통 앞단.

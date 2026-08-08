@@ -23,7 +23,7 @@ pub use soksak_spec_socket::RequestEnvelope as Request;
 /// 명령은 성공했고 활동 원장에만 부모가 없었다.
 ///
 /// `window` 는 요청의 것이 아니라 **해소된 타겟**이다 — 생략된 요청도 여기서는 이름을 갖는다.
-pub fn deliver_envelope(id: u64, req: &Request, target: &str) -> Value {
+pub fn deliver_envelope(id: u64, req: &Request, target: &str, hosts: usize) -> Value {
     serde_json::json!({
         "deliver": {
             "id": id,
@@ -35,6 +35,11 @@ pub fn deliver_envelope(id: u64, req: &Request, target: &str) -> Value {
             "origin": req.origin,
             "timeoutMs": req.timeout_ms,
             "idempotencyKey": req.idempotency_key,
+            // **몇에게 갔는가.** 같은 라벨을 두 프레임워크가 들면 이 명령은 둘 다에게 간다.
+            // 받는 쪽이 그 수를 모르면 자기가 유일한 수행자인 줄 알고, 부작용이 부르는 쪽이
+            // 지정한 한 자리에 남는 명령은 서로를 덮으면서 둘 다 성공을 답한다(실측
+            // 2026-08-08: `window.snapshot {path}` 두 답이 OK 인데 파일은 하나).
+            "hosts": hosts,
         }
     })
 }

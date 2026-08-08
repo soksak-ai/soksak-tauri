@@ -86,3 +86,26 @@ fn a_request_carries_the_harness_field_names() {
     assert_eq!(r.timeout_ms, Some(50));
     assert_eq!(r.params["root"], "/p");
 }
+
+/// 규칙 — 배달은 **몇에게 갔는지** 싣는다.
+///
+/// 같은 라벨을 두 프레임워크가 들면 명령은 둘 다에게 간다(고를 수 없으면 전부에게 — 그것이
+/// 옳다). 그런데 받는 쪽은 자기가 유일한 수행자인지 모른다. 부작용이 부르는 쪽이 지정한 한
+/// 자리에 남는 명령이면 그 무지가 **조용한 손실**이 된다 — 실측 2026-08-08:
+/// `window.snapshot {path}` 를 두 호스트가 수행해 둘 다 `OK` 를 답했고, 파일은 하나만 남았다.
+/// 나중에 쓴 쪽이 먼저 쓴 쪽을 덮었는데 어느 답에도 그 사실이 없다.
+///
+/// 수를 실으면 받는 쪽이 판단할 수 있다. 싣지 않으면 그 판단 자체가 불가능하다.
+#[test]
+fn 배달_봉투는_수행자_수를_싣는다() {
+    let req = Request {
+        method: "window.snapshot".to_string(),
+        ..Request::default()
+    };
+    let envelope = deliver_envelope(7, &req, "main", 2);
+    assert_eq!(
+        envelope["deliver"]["hosts"],
+        serde_json::json!(2),
+        "몇에게 갔는지 없으면 받는 쪽은 자기가 유일한 수행자인 줄 안다"
+    );
+}

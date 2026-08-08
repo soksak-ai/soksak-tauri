@@ -28,6 +28,8 @@ interface CmdRequest {
   parent?: string | null;
   // 실행 유래(§5) — Rust 내부 발화(스케줄러 "schedule")만 싣는다. 시스템 유래는 무낭독·흐림.
   origin?: string | null;
+  // 이 요청을 몇이 함께 수행하는가 — 같은 라벨을 두 프레임워크가 들면 둘 다에게 온다.
+  hosts?: number | null;
 }
 
 // "이미 채웠다"는 기억은 등록부와 **함께** 살아야 한다. 한쪽만 갈리면 둘이 어긋난다:
@@ -104,7 +106,7 @@ export function startExecutor(): void {
   // 두 번 일어나면 되돌릴 수 없다).
   const served = new Set<number>();
   const subscription = listenThisWindow<CmdRequest>("cmd-request", async (e) => {
-    const { id, method, params, pane, window, parent, origin } = e.payload;
+    const { id, method, params, pane, window, parent, origin, hosts } = e.payload;
     if (served.has(id)) return;
     served.add(id);
     // 호스트 미준비 = 플러그인 활성화 진행 중. 게이트는 **미등록 명령만** 세운다 — 이미
@@ -121,6 +123,7 @@ export function startExecutor(): void {
       window: window ? { label: window } : undefined,
       parent: parent ?? undefined,
       origin: origin ?? undefined,
+      hosts: hosts ?? undefined,
       afterReply: (task) => afterReply.push(task),
     });
     await completeCommandReply(

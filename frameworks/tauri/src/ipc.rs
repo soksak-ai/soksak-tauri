@@ -863,6 +863,10 @@ fn route(app: &AppHandle, req: Request) -> Value {
             "window": target,
             "parent": req.parent,
             "origin": req.origin,
+            // 몇이 이 요청을 함께 수행하는가 — cored 가 센 값을 그대로 넘긴다. 여기서
+            // 떨어뜨리면 창은 자기가 유일한 수행자인 줄 알고, 부작용이 부르는 쪽이 지정한 한
+            // 자리에 남는 명령이 서로를 덮으면서 둘 다 성공을 답한다(실측 2026-08-08).
+            "hosts": req.hosts,
         })
     }) else {
         record_route_outcome(
@@ -992,6 +996,8 @@ pub fn request_command(
         app,
         Request {
             id: None,
+            // 이 프로세스가 스스로 만드는 요청이다 — 수행자는 자기 하나다.
+            hosts: Some(1),
             method,
             params,
             pane: None,
@@ -1044,6 +1050,8 @@ fn request_in_window_unused(
         app,
         Request {
             id: None,
+            // 이 프로세스가 스스로 만드는 요청이다 — 수행자는 자기 하나다.
+            hosts: Some(1),
             method,
             params,
             pane,

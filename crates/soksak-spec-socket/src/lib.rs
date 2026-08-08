@@ -330,6 +330,13 @@ pub struct RequestEnvelope {
     pub protocol: Option<u32>,
     /// Idempotency key for service-bound commands — the servicer dedupes on it.
     pub idempotency_key: Option<String>,
+    /// How many hosts are performing this same request. Absent means one.
+    ///
+    /// A label can be held by more than one framework at once, and a request that cannot pick one
+    /// goes to all of them. A command whose side effect lands at a caller-named place must know
+    /// that — two performers writing the same file both answer OK and only one file survives.
+    #[serde(default)]
+    pub hosts: Option<usize>,
 }
 
 #[cfg(test)]

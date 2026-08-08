@@ -163,6 +163,8 @@ export interface CommandSpec {
     | "INTERNAL"
     | "TIMEOUT"
     | "AMBIGUOUS_TARGET"
+    // 이 라벨을 든 창이 여럿이라 부작용이 서로를 덮는다 — 대상이 없는 것이 아니라 **여럿**이다.
+    | "AMBIGUOUS_HOST"
     | "ALREADY_EXISTS"
     // 노드는 노출돼 있는데 실제 rect가 화면 밖이다 — 캡처·측정할 픽셀이 없다.
     | "OFFSCREEN"
@@ -201,6 +203,16 @@ export interface CommandContext {
   // 실행 유래(§5) — 생략=사람 유래(콘솔·터미널·에이전트 턴). "schedule" 등 시스템 유래는
   // 낭독 후보에서 제외되고(아래 execute) 피드에서 흐리게 표시된다.
   origin?: string;
+  /**
+   * How many hosts are performing this same request.
+   *
+   * A label can be held by more than one framework at once (`main` is an orchestrator role, and
+   * workspace windows deliberately reuse their stored `w-<uuid>`), and a request that cannot pick
+   * one goes to all of them. A command whose side effect lands at a caller-named place must know
+   * that: two performers writing the same file both answer OK and only one file survives (실측
+   * 2026-08-08, `window.snapshot {path}`). Absent means one.
+   */
+  hosts?: number;
   /**
    * Register a side effect that may run only after the caller has received this command's result.
    * The socket executor owns this boundary. Commands that terminate or replace their own host must
@@ -284,6 +296,7 @@ export type ErrCode =
   | "REGISTRY_EMPTY"
   | "INVALID_PARAMS"
   | "AMBIGUOUS_TARGET"
+  | "AMBIGUOUS_HOST"
   | "ALREADY_EXISTS"
   | "PERMISSION_DENIED"
   | "PLUGIN_AUTH_REQUIRED"
