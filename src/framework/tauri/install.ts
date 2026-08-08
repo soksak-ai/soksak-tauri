@@ -34,6 +34,7 @@ import {
   pluginViewCompositionStatus,
   pluginViewNativeContractStatus,
   pluginViewPaneHostsStatus,
+  pluginViewPresentationCost,
   pluginViewPresentationStatus,
   preparePresentedPluginViewMove,
   settlePluginViewComposition,
@@ -389,6 +390,17 @@ function installPaneSurfaceHostCommands(): void {
     params: {}, returns: "{ total, grouped, pending }",
     message: (data) => `plugin presentation ${String(data.grouped)}/${String(data.total)}`,
     handler: async () => pluginViewPresentationStatus(),
+  });
+  register("webview.pane.presentation.cost", {
+    description:
+      "Read where the last presentation barrier spent its time — the wait that runs after the DOM has already gone quiet. Splits into three: waiting for each view's visibility to drain, waiting for composition, and asking each surface whether its frame reached the screen (per label, slowest first). Without this the total is all you get, and fixing it becomes guesswork: two such guesses made the barrier 2x and 4x slower before this existed.",
+    triggers: { ko: "표시 확인 비용 분해 정착 느림 어느단계 표면별" },
+    params: {}, returns: "{ visibilityMs, compositionMs, presentedMs, each: [[label, ms]] } | null",
+    message: (data) =>
+      data === null
+        ? "아직 확인 구간이 돈 적이 없습니다"
+        : `표시 확인 ${String(data.presentedMs)}ms · 가시성 ${String(data.visibilityMs)}ms · 합성 ${String(data.compositionMs)}ms`,
+    handler: async () => pluginViewPresentationCost(),
   });
   register("webview.pane.wait", {
     description: "Wait on lifecycle events until the requested PaneSurfaceHosts are grouped.",

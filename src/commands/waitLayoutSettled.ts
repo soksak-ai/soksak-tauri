@@ -67,6 +67,19 @@ export function waitLayoutSettled(timeoutMs = 4_000, settlementKey?: string): Pr
   /** 이 영수증의 `...UnixMs` 시각을 낸 시계의 이름. */
   clock: string;
   syncPending: boolean;
+  /**
+   * 확인 구간의 분해 — 표면이 화면에 올라왔는지 묻는 데 든 시간.
+   *
+   * DOM 과 모션이 끝난 뒤에도 정착이 기다린다면 그 시간은 전부 여기다(실측 2026-08-09: DOM 은
+   * 9ms 에 끝났는데 정착은 100ms 였다). 그 안에 호출이 여럿이라, 어느 쪽인지 묻지 못하면
+   * 고치는 쪽은 범인을 추측하게 된다 — 그 추측 두 번이 각각 2배·4배 느린 코드를 낳았다.
+   */
+  presentation: {
+    contentMs: number;
+    viewMs: number;
+    /** 어느 표면을 기다렸는가 — 하나가 느린 것과 여럿이 겹친 것은 다른 사실이다. */
+    contentLabels: string[];
+  };
 }> {
   const started = performance.now();
   return new Promise((resolve, reject) => {
@@ -77,6 +90,7 @@ export function waitLayoutSettled(timeoutMs = 4_000, settlementKey?: string): Pr
     let unsubscribeSettlement = () => {};
     let presentationPending: Promise<void> | null = null;
     let presentationSettled = false;
+    const spent = { contentMs: 0, viewMs: 0, contentLabels: [] as string[] };
 
     const close = (error?: Error) => {
       if (closed) return;
@@ -96,6 +110,7 @@ export function waitLayoutSettled(timeoutMs = 4_000, settlementKey?: string): Pr
           // 이름을 답해야 한다.
           clock: PRESENTATION_CLOCK,
           syncPending: !presentationSettled,
+          presentation: { ...spent },
         });
       }
     };
@@ -113,11 +128,20 @@ export function waitLayoutSettled(timeoutMs = 4_000, settlementKey?: string): Pr
         const pluginPresentation = pluginViewPresentationHost();
         if (!presentationSettled && (hasContentViewHost() || pluginPresentation)) {
           if (!presentationPending) {
+            // 각 배리어의 시간을 따로 잰다 — 합계만 알면 고칠 자리를 못 찾는다.
+            const timed = <T>(work: Promise<T>, into: "contentMs" | "viewMs") => {
+              const at = performance.now();
+              return work.finally(() => { spent[into] += Math.round(performance.now() - at); });
+            };
+            const labels = hasContentViewHost() ? visibleContentViewLabels() : [];
+            spent.contentLabels = [...labels];
             const barriers = [
               ...(hasContentViewHost()
-                ? [contentViewHost().presentationSettled(visibleContentViewLabels())]
+                ? [timed(contentViewHost().presentationSettled(labels), "contentMs")]
                 : []),
-              ...(pluginPresentation ? [pluginPresentation.presentationSettled()] : []),
+              ...(pluginPresentation
+                ? [timed(pluginPresentation.presentationSettled(), "viewMs")]
+                : []),
             ];
             presentationPending = Promise.all(barriers)
               .then(() => { presentationSettled = true; })

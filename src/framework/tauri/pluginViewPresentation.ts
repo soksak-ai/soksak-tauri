@@ -926,15 +926,45 @@ const host: PluginViewPresentationHost = {
     };
   },
   async presentationSettled() {
+    // 세 단계의 시간을 따로 남긴다 — 합계만 알면 고칠 자리를 못 찾는다(실측 2026-08-09:
+    // 정착 100~250ms 가 전부 이 배리어였는데 어느 단계인지 물을 자리가 없었다).
     const views = [...state.views.values()].filter((view) => !view.disposed);
+    const at = performance.now();
     await Promise.all(views.map((view) => view.visibility.settled()));
+    const visibilityMs = Math.round(performance.now() - at);
+    const compositionAt = performance.now();
     await awaitPluginViewComposition();
-    await Promise.all(views
+    const compositionMs = Math.round(performance.now() - compositionAt);
+    const presentedAt = performance.now();
+    const labels = views
       .filter((view) => view.visible)
-      .flatMap((view) => [view.renderer, ...view.members])
-      .map((label) => invoke("webview_presented", { label })));
+      .flatMap((view) => [view.renderer, ...view.members]);
+    const each: Array<[string, number]> = [];
+    await Promise.all(labels.map(async (label) => {
+      const one = performance.now();
+      await invoke("webview_presented", { label });
+      each.push([label, Math.round(performance.now() - one)]);
+    }));
+    lastPresentationCost = {
+      visibilityMs,
+      compositionMs,
+      presentedMs: Math.round(performance.now() - presentedAt),
+      each: each.sort((left, right) => right[1] - left[1]),
+    };
   },
 };
+
+/** 직전 확인 구간의 분해 — 관측면(진단이 이 값을 읽는다). */
+let lastPresentationCost: {
+  visibilityMs: number;
+  compositionMs: number;
+  presentedMs: number;
+  each: Array<[string, number]>;
+} | null = null;
+
+export function pluginViewPresentationCost() {
+  return lastPresentationCost;
+}
 
 export function installPluginViewPresentation(): void {
   registerPluginViewPresentationHost(host);

@@ -1627,7 +1627,7 @@ async function inProjectedRealm(
     params: {
       timeoutMs: { type: "number", description: "Finite failure bound in ms (default 4000, max 30000)" },
     },
-    returns: "{ waitedMs, animations, settledAtUnixMs, clock, syncPending }",
+    returns: "{ waitedMs, animations, settledAtUnixMs, clock, syncPending, presentation:{contentMs,viewMs,contentLabels} }",
     message: () => tmsg("msg.ui.motion"),
     errors: ["INVALID_PARAMS", "TIMEOUT"],
     examples: ['ui.layout.wait-settled \'{"timeoutMs":8000}\''],
