@@ -872,6 +872,31 @@ export function registerDomCatalog(): void {
     }),
   });
 
+/** 이 노드는 **다른 realm 의 사실을 투영한 자리**인가.
+ *
+ * 콘텐츠가 네이티브 자식 웹뷰로 사는 뷰는 그 안의 노드를 호스트에 투영한다: 같은 자리에 같은
+ * 크기의 투명 `<div>` 를 두고 값만 데이터셋으로 싣는다(pluginViewPresentation). 관측면으로는
+ * 옳다 — 트리가 그 노드를 보고 measure 가 값을 답한다.
+ *
+ * 조작면은 다르다. 그 div 는 사건을 안 받고 진짜 노드는 다른 realm 에 있다. 여기에 사건을
+ * 꽂으면 **아무 일도 일어나지 않는데 성공이 나간다** — 실측 2026-08-08: 브라우저 세 종의
+ * 주소줄이 전부 그랬고, 사람에게는 "주소를 입력할 수 없다" 로 보였다.
+ */
+function projectedRealmNode(el: Element): boolean {
+  return el instanceof HTMLElement && el.dataset.formControl !== undefined;
+}
+
+function projectedRealmRefusal(el: Element, addr: string) {
+  if (!projectedRealmNode(el)) return null;
+  return {
+    ok: false as const,
+    code: "OTHER_REALM" as const,
+    message:
+      `이 노드는 다른 realm 의 투영입니다(plugin-view) — 호스트에 꽂은 사건은 그 안에 닿지 않습니다: ${addr}. ` +
+      "그 뷰를 소유한 플러그인의 명령으로 조작하십시오(state.commands 로 그 뷰의 표면을 찾습니다).",
+  };
+}
+
   register("ui.input.click", {
     description:
       "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. atUnixMs is the epoch the stimulus actually left, on the same presentation clock as layout.transactions and native display ledgers — join causality with it instead of inferring the click time from frames. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up. recordDir starts finite framework-neutral visual evidence before the click without focusing the window; recording.status reports its independent outcome, and capture/storage failure never cancels the click transaction. Unexposed addresses return NOT_EXPOSED — no guessing.",
@@ -938,6 +963,8 @@ export function registerDomCatalog(): void {
       const addr = p.address as string;
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
+      // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
+      { const other = projectedRealmRefusal(found.el, addr); if (other) return other; }
       const el = found.el;
       // 실제 클릭과 등가 시퀀스 — el.click()(click 단발)은 mousedown 기반 요소(사이드바 탭
       // 드래그-선택 등)를 못 누른다. dblclick 커맨드와 동일 패턴의 1라운드.
@@ -1137,6 +1164,8 @@ export function registerDomCatalog(): void {
       }
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
+      // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
+      { const other = projectedRealmRefusal(found.el, addr); if (other) return other; }
       const el = found.el;
       const init: KeyboardEventInit = {
         key,
@@ -1190,6 +1219,8 @@ export function registerDomCatalog(): void {
       }
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
+      // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
+      { const other = projectedRealmRefusal(found.el, addr); if (other) return other; }
       const el = found.el;
       const key = el instanceof HTMLElement ? (el.dataset.gutterKey ?? null) : null;
       if (key != null) useGutterHover.getState().set(key);
@@ -1754,6 +1785,8 @@ export function registerDomCatalog(): void {
       const addr = p.address as string;
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
+      // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
+      { const other = projectedRealmRefusal(found.el, addr); if (other) return other; }
       const el = found.el;
       const r = el.getBoundingClientRect();
       const x = r.left + r.width / 2;
@@ -1789,6 +1822,8 @@ export function registerDomCatalog(): void {
       const addr = p.address as string;
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
+      // 투영 노드에 사건을 꽂으면 아무 일도 안 일어난다 — 성공으로 답하지 않는다.
+      { const other = projectedRealmRefusal(found.el, addr); if (other) return other; }
       const el = found.el;
       // contenteditable 노드 — 인라인 편집면(blur 확정 계약)도 같은 명령으로 채운다.
       // textContent 교체 후 input + focusout(React onBlur 는 focusout 을 듣는다)으로 확정을 유발.
