@@ -1,5 +1,4 @@
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { presentationBarrierLabels } from "./presentationBarrierScope";
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
 import { presentationNowUnixMs } from "../../lib/presentationClock";
@@ -25,7 +24,6 @@ import {
 } from "../../plugins/viewPresentationHost";
 import { viewPresentationRuntime } from "../../plugins/viewRegistry";
 import { TAURI_PANE_RENDERER_ATTR } from "./holeMarkers";
-import { CONTENT_VIEW_BODY } from "../../lib/contentViews";
 import {
   isPluginViewCallExposed,
   isPluginViewSubscribeExposed,
@@ -961,17 +959,13 @@ const host: PluginViewPresentationHost = {
     const verdictMs = Math.round(performance.now() - verdictAt);
     const compositionMs = settleMs + verdictMs;
     const presentedAt = performance.now();
-    // 무엇이 지금 화면에 있는가는 문서의 선언이 안다 — 뷰의 기억만 믿으면 사라진 표면을
-    // 계속 기다린다(실측 2026-08-09: 탭 목록에 없는 표면 하나를 100ms 기다리고 있었다).
-    const declared = new Set<string>([
-      ...[...document.querySelectorAll<HTMLElement>(`[${TAURI_PANE_RENDERER_ATTR}]`)]
-        .map((node) => node.getAttribute(TAURI_PANE_RENDERER_ATTR) ?? "")
-        .filter(Boolean),
-      ...[...document.querySelectorAll<HTMLElement>(`[${CONTENT_VIEW_BODY}]`)]
-        .map((node) => node.getAttribute(CONTENT_VIEW_BODY) ?? "")
-        .filter(Boolean),
-    ]);
-    const labels = presentationBarrierLabels(views, declared);
+    // **호스트 문서로 표면을 가려내지 않는다.** 콘텐츠 표면은 자식 realm 이 선언하므로 이 문서에
+    // 없다 — 여기서 "문서가 모르는 것" 으로 거르면 진짜 표면이 전부 유령으로 읽히고, 그 기다림이
+    // 사라지면 표면이 제자리를 못 잡는다(실사고 2026-08-09: 창 밖으로 흩어졌다).
+    // 범위의 주인은 그 realm 을 아는 쪽이다.
+    const labels = views
+      .filter((view) => view.visible)
+      .flatMap((view) => [view.renderer, ...view.members]);
     const each: Array<[string, number]> = [];
     await Promise.all(labels.map(async (label) => {
       const one = performance.now();
