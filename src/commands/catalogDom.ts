@@ -1616,11 +1616,11 @@ async function inProjectedRealm(
           w: root.clientWidth,
           h: root.clientHeight,
         });
-        // **몇 개를 봤는지 함께 적는다.** 빈 목록도 "전부 안에 있다" 로 통과한다 — 관측이
-        // 끊긴 것과 정상인 것이 같은 답이 되면 이 축은 무엇이 깨져도 영원히 통과한다.
+        // 몇 개를 봤는지 함께 적는다 — 빈 목록도 "전부 안에 있다" 로 통과한다.
         const visible = (surfaces?.surfaces ?? []).filter(
           (row) => row.hidden !== true && row.effectivelyHidden !== true,
         ).length;
+        // 앱이 모르는 표면 — 장부에서 빠지고 네이티브에만 남은 것은 장부로 못 찾는다.
         checks.push({
           name: "surface-inside-window",
           ok: outside.length === 0,

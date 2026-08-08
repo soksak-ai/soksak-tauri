@@ -42,3 +42,21 @@ export function surfacesOutsideWindow(
   }
   return out;
 }
+
+/**
+ * 네이티브 층에 보이는데 **앱이 모르는** 표면.
+ *
+ * 앱의 유령 판정은 자기 장부를 훑는다. 그래서 장부에서 이미 빠지고 네이티브에만 남은 표면은
+ * 영원히 안 잡힌다 — 실측 2026-08-09: 탭을 닫았는데 그 표면이 계속 보였고 `ghosts` 는 빈
+ * 목록이었다. 그 표면은 매 전환마다 확인 비용을 내고 화면을 덮은 채 아무도 모른다.
+ */
+export function unknownSurfaces(
+  surfaces: readonly SurfaceFrameFact[],
+  /** 앎은 여러 출처에서 온다 — 이름 하나를 물으면 답하는 것이면 무엇이든 된다. */
+  known: { has(label: string): boolean },
+): string[] {
+  return surfaces
+    .filter((row) => row.hidden !== true && row.effectivelyHidden !== true)
+    .map((row) => row.label)
+    .filter((label) => !known.has(label));
+}
