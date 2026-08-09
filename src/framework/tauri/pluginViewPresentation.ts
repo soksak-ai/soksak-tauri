@@ -24,6 +24,7 @@ import {
 } from "../../plugins/viewPresentationHost";
 import { viewPresentationRuntime } from "../../plugins/viewRegistry";
 import { TAURI_PANE_RENDERER_ATTR } from "./holeMarkers";
+import { settlingViews } from "./settleScope";
 import {
   isPluginViewCallExposed,
   isPluginViewSubscribeExposed,
@@ -814,7 +815,9 @@ export function pluginViewSettleCost() {
 }
 
 export async function settlePluginViewComposition(timeoutMs = 10_000): Promise<void> {
-  const views = [...state.views.values()].filter((view) => view.grouped && !view.disposed);
+  // 화면에 없는 뷰는 다시 잴 자리가 없다 — 그 왕복은 답을 기다리는 시간이 전부 낭비이고,
+  // 전부 훑으면 비용이 탭 수에 비례한다(실측 2026-08-09: 탭당 약 5.6ms).
+  const views = settlingViews([...state.views.values()]);
   const cost = { frameMs: 0, reportMs: 0, members: 0 };
   await Promise.all(views.map(async (view) => {
     // Main renderer가 소유한 host frame을 현재 공개 DOM에 먼저 확정한다.
