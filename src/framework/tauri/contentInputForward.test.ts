@@ -30,9 +30,15 @@ const at = (el: Element, x: number, y: number, w: number, h: number) => {
     ({ x, y, left: x, top: y, width: w, height: h, right: x + w, bottom: y + h }) as DOMRect;
 };
 
+// **호스트 문서에는 콘텐츠 자리 선언이 없다.** 그 선언(`data-content-view-body`)은 자식 렌더러
+// 문서에 산다 — 실측 2026-08-09: 호스트에서 그것을 세면 0개다. 호스트에 있는 것은 그 표면을
+// 비추는 **투영**(`data-surface`)이고, 투영은 `pointer-events:none` 이라 사건의 target 도 되지
+// 않는다. 그래서 자리를 target 으로 찾으면 이 포워더는 한 번도 안 돈다.
+//
+// 찾는 방법은 **좌표**다: 투영들 중 이 점을 담고 있는 것.
 function mountSlot(label = "b-w-1-tab-1"): HTMLElement {
-  document.body.innerHTML = `<div data-content-view-body="${label}"></div>`;
-  const slot = document.querySelector<HTMLElement>("[data-content-view-body]")!;
+  document.body.innerHTML = `<div data-surface="${label}" style="pointer-events:none"></div>`;
+  const slot = document.querySelector<HTMLElement>("[data-surface]")!;
   at(slot, 100, 50, 800, 600);
   return slot;
 }
@@ -82,6 +88,30 @@ describe("콘텐츠 자리 위의 포인터는 그 표면으로 간다", () => {
     fire(document.getElementById("chrome")!, "mousedown", 10, 10);
     stop();
     expect(host.sendInput).not.toHaveBeenCalled();
+  });
+
+  // 투영은 사건을 안 받는다 — target 으로 찾으면 영영 안 돈다. 좌표로 찾는다.
+  it("투영이 target 이 아니어도 그 자리의 포인터를 넘긴다", () => {
+    mountSlot();
+    document.body.insertAdjacentHTML("beforeend", `<div id="under">page</div>`);
+    at(document.getElementById("under")!, 100, 50, 800, 600);
+    const stop = installContentInputForwarding(document);
+    fire(document.getElementById("under")!, "mousedown", 150, 80);
+    stop();
+    expect(host.sendInput).toHaveBeenCalledTimes(1);
+  });
+
+  // 겹친 투영이 여럿이면 가장 위의 것 — 앞에 있는 것이 사람이 본 것이다.
+  it("겹치면 마지막에 놓인 투영으로 간다", () => {
+    document.body.innerHTML =
+      `<div data-surface="back"></div><div data-surface="front"></div>`;
+    const [back, front] = [...document.querySelectorAll<HTMLElement>("[data-surface]")];
+    at(back!, 0, 0, 800, 600);
+    at(front!, 0, 0, 800, 600);
+    const stop = installContentInputForwarding(document);
+    fire(document.body, "mousedown", 10, 10);
+    stop();
+    expect((host.sendInput.mock.calls as Sent[])[0]![0]).toBe("front");
   });
 
   // 해지하면 멈춘다 — 남기면 사라진 표면으로 계속 보낸다.

@@ -10,7 +10,7 @@
 // 뷰 안의 노드(주소줄·버튼)는 이미 이 방식으로 넘긴다(pluginViewPresentation). 빠져 있던 것은
 // **콘텐츠 자리**다. 다른 프레임워크에는 이 배선이 없다 — 거기서는 콘텐츠가 문서 안에 살아서
 // 사건이 그냥 도착한다.
-import { CONTENT_VIEW_BODY, contentViewHost, hasContentViewHost } from "../../lib/contentViews";
+import { contentViewHost, hasContentViewHost } from "../../lib/contentViews";
 import type { SurfacePointerInput } from "../../lib/contentViews";
 
 const KIND: Record<string, "down" | "up" | "move"> = {
@@ -27,12 +27,23 @@ export function installContentInputForwarding(doc: Document): () => void {
   const forward = (event: MouseEvent) => {
     const named = KIND[event.type];
     if (named === undefined) return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    // 자리는 선언이 안다 — 좌표로 뒤지면 겹친 자리에서 남의 표면을 고른다.
-    const slot = target.closest<HTMLElement>(`[${CONTENT_VIEW_BODY}]`);
-    const label = slot?.getAttribute(CONTENT_VIEW_BODY);
-    if (!slot || !label || !hasContentViewHost()) return;
+    if (!hasContentViewHost()) return;
+    // **투영은 사건의 target 이 될 수 없다.** 콘텐츠 자리 선언은 자식 렌더러 문서에 살고, 호스트에
+    // 있는 것은 그 표면을 비추는 투영뿐인데 투영은 `pointer-events:none` 이다(실측 2026-08-09:
+    // 호스트에서 자리 선언을 세면 0개다). target 으로 찾으면 이 포워더는 한 번도 안 돈다.
+    //
+    // 그래서 좌표로 찾는다 — 이 점을 담은 투영 중 **마지막에 놓인 것**. 겹쳤을 때 앞에 있는 것이
+    // 사람이 본 표면이다.
+    let slot: HTMLElement | null = null;
+    for (const candidate of doc.querySelectorAll<HTMLElement>("[data-surface]")) {
+      const box = candidate.getBoundingClientRect();
+      if (
+        event.clientX >= box.left && event.clientX <= box.right &&
+        event.clientY >= box.top && event.clientY <= box.bottom
+      ) slot = candidate;
+    }
+    const label = slot?.dataset.surface;
+    if (!slot || !label) return;
     const rect = slot.getBoundingClientRect();
     // 버튼을 쥔 이동은 끌기다 — 이동으로 보내면 그 안의 `buttons` 가 0 이라 끌기가 죽는다.
     const kind: SurfacePointerInput["kind"] =
