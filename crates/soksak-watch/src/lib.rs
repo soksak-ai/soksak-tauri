@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn an_unarmed_watcher_refuses_rather_than_pretending() {
         let w = FsWatcher::default(); // init 하지 않음
-        let err = match w.watch("<local-evidence>") {
+        let err = match w.watch("/tmp") {
             Ok(n) => panic!("미초기화 워처가 등록 성공(refcount {n})을 위장했다"),
             Err(e) => e,
         };

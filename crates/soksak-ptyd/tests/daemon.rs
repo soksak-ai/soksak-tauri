@@ -2,7 +2,7 @@
 // hello 게이트(버전·토큰), createOrAttach 스폰, stream 라이브 출력, 앱-사망 모사
 // (연결 전부 드롭) 후 같은 셸 pid 재부착 + 링 재생, kill, shutdown.
 //
-// 소켓 경로는 <local-evidence> 밑 짧은 경로를 쓴다 — macOS sun_path 는 104바이트 제한이라
+// 소켓 경로는 /tmp 밑 짧은 경로를 쓴다 — macOS sun_path 는 104바이트 제한이라
 // 긴 tempdir(스크래치패드 포함)로는 bind 자체가 실패한다.
 #![cfg(unix)]
 
@@ -31,7 +31,7 @@ impl Drop for Daemon {
 // 데몬 기동 + control 소켓 응답 대기. 재시도는 테스트 부트스트랩 한정(상한 5s,
 // 성공 즉시 종료) — 런타임 감시가 아니다.
 fn start_daemon(name: &str) -> Daemon {
-    let home = PathBuf::from(format!("<local-evidence>/sokptyd-{}-{name}", std::process::id()));
+    let home = PathBuf::from(format!("/tmp/sokptyd-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&home).unwrap();
     let child = Command::new(env!("CARGO_BIN_EXE_soksak-ptyd"))
@@ -168,7 +168,7 @@ fn create(control: &mut Control, pane: &str) -> Value {
         pane_id: pane.into(),
         cols: 80,
         rows: 24,
-        cwd: Some("<local-evidence>".into()),
+        cwd: Some("/tmp".into()),
         shell: "/bin/sh".into(),
         env: vec![("TERM".into(), "dumb".into()), ("PS1".into(), "$ ".into())],
         env_remove: vec![],
@@ -611,7 +611,7 @@ fn store_blob_seals_arbitrary_bytes_and_fetch_sealed_returns_them() {
         pane_id: "pane-blob".into(),
         cols: 80,
         rows: 24,
-        cwd: Some("<local-evidence>".into()),
+        cwd: Some("/tmp".into()),
         shell: "/bin/sh".into(),
         env: vec![("PS1".into(), "$ ".into())],
         env_remove: vec![],

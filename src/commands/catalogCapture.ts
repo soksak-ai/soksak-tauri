@@ -353,10 +353,10 @@ export function registerCaptureCatalog(): void {
     errors: ["INVALID_PARAMS", "OFFSCREEN", "TARGET_NOT_FOUND", "NOT_EXPOSED", "AMBIGUOUS_HOST"],
     examples: [
       "window.snapshot",
-      'window.snapshot \'{"path":"<local-evidence>/shot.png"}\'',
+      'window.snapshot \'{"path":"/tmp/shot.png"}\'',
       'window.snapshot \'{"rect":{"x":100,"y":80,"w":400,"h":300},"base64":true}\'',
-      'window.snapshot \'{"rect":{"x":100,"y":80,"w":400,"h":300},"path":"<local-evidence>/crop.png"}\'',
-      'window.snapshot \'{"node":"win/main/proj/p1/chrome/tab/space/0","path":"<local-evidence>/tab.png"}\'',
+      'window.snapshot \'{"rect":{"x":100,"y":80,"w":400,"h":300},"path":"/tmp/crop.png"}\'',
+      'window.snapshot \'{"node":"win/main/proj/p1/chrome/tab/space/0","path":"/tmp/tab.png"}\'',
     ],
     handler: async (p, ctx) => {
       // **한 자리에 둘이 쓰면 하나는 사라진다.**
@@ -518,9 +518,9 @@ export function registerCaptureCatalog(): void {
     message: (d) => tmsg("msg.window.record", { n: Number(d.frames) }),
     errors: ["INVALID_PARAMS"],
     examples: [
-      'window.record \'{"dir":"<local-evidence>/rec"}\'',
-      'window.record \'{"dir":"<local-evidence>/rec","frames":120,"intervalMs":33}\'',
-      'window.record \'{"dir":"<local-evidence>/rec","frames":120,"maxBytes":536870912}\'',
+      'window.record \'{"dir":"/tmp/rec"}\'',
+      'window.record \'{"dir":"/tmp/rec","frames":120,"intervalMs":33}\'',
+      'window.record \'{"dir":"/tmp/rec","frames":120,"maxBytes":536870912}\'',
     ],
     // **프레임 루프는 정책이지 표면이 아니다.** 프레임워크는 이미 "한 장 담기"를 답한다
     // (snapshot_region). 몇 장을 어떤 간격으로 어떤 이름에 쓸지는 이 앱이 정하는 일이고, 그것을

@@ -57,7 +57,7 @@ fn e2e_kek_is_deterministic() {
 // 오픈 메커니즘: 헤드리스/E2E 가 사용자 실볼트를 오염하지 않게 경로를 격리한다(passphrase 비종속).
 #[test]
 fn vault_path_env_override() {
-    let id = Identity::new("<local-evidence>/x-dev", "com.soksak.dev");
+    let id = Identity::new("/tmp/x-dev", "com.soksak.dev");
     let iso = std::env::temp_dir()
         .join("soksak-vault-override-test")
         .join("secrets.vault");
@@ -111,9 +111,9 @@ fn an_unconfigured_vault_never_falls_back_to_the_ambient_home() {
 // (전역을 한 번도 안 읽고 임의 정체성의 볼트 경로를 얻는 것이 이 계약의 요점이다.)
 #[test]
 fn a_vault_belongs_to_an_identity_not_to_a_process() {
-    let dev = Identity::new("<local-evidence>/x-dev", "com.soksak.dev");
-    let debug = Identity::new("<local-evidence>/x-debug", "com.soksak.debug");
-    assert_eq!(vault_path(&dev), Path::new("<local-evidence>/x-dev/secrets.vault"));
+    let dev = Identity::new("/tmp/x-dev", "com.soksak.dev");
+    let debug = Identity::new("/tmp/x-debug", "com.soksak.debug");
+    assert_eq!(vault_path(&dev), Path::new("/tmp/x-dev/secrets.vault"));
     assert_ne!(vault_path(&dev), vault_path(&debug), "홈이 다르면 볼트도 다르다");
 }
 

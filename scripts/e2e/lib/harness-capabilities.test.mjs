@@ -194,7 +194,7 @@ describe("readHarnessCapabilities", () => {
 
 describe("recordGateOrCapabilityAbsence", () => {
   const liveStore = (runId) => createBrowserGateReportStore({
-    root: path.join("<local-evidence>", `soksak-harness-capability-${runId}`),
+    root: path.join("/tmp", `soksak-harness-capability-${runId}`),
     buildId: "build-1",
     runId,
     platform: "darwin",

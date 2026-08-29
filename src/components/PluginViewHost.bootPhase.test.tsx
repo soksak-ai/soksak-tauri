@@ -76,7 +76,7 @@ describe("PluginViewHost — 미등록 뷰의 부트 3상", () => {
     root = createRoot(host);
     act(() => {
       root!.render(
-        <FileViewerHost path="<local-evidence>/x.md" projectId="p1" root={null} viewId="v1" />,
+        <FileViewerHost path="/tmp/x.md" projectId="p1" root={null} viewId="v1" />,
       );
     });
     expect(host.querySelector(".plugin-loading")).not.toBeNull();

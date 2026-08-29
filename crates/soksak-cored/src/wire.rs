@@ -414,7 +414,7 @@ mod tests {
 
     /// 검증용 부팅 상태 — 어느 홈을 서빙하든 봉투·판 협상은 같아야 한다.
     fn ctx() -> Ctx {
-        Ctx::new(Identity::new("<local-evidence>/soksak-wire-test", "com.soksak.dev"))
+        Ctx::new(Identity::new("/tmp/soksak-wire-test", "com.soksak.dev"))
     }
 
     #[test]

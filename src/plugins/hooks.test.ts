@@ -34,7 +34,7 @@ describe("startPluginHooks — sessions diff coalescing", () => {
     );
 
     const s = useSessions.getState();
-    const created = s.addProject({ alias: "perf", root: "<local-evidence>/perf-test" });
+    const created = s.addProject({ alias: "perf", root: "/tmp/perf-test" });
     expect(created.ok).toBe(true);
 
     if (!created.ok) throw new Error("addProject 실패");
@@ -58,7 +58,7 @@ describe("startPluginHooks — sessions diff coalescing", () => {
 
     const opened = useSessions
       .getState()
-      .openFileView(projectId, "<local-evidence>/perf-test/a.txt");
+      .openFileView(projectId, "/tmp/perf-test/a.txt");
     expect(opened.ok).toBe(true);
 
     // 아직 마이크로태스크 전 — 이벤트 0건(쓰기마다 diff 돌았다면 이미 다수 발화).
@@ -73,7 +73,7 @@ describe("startPluginHooks — sessions diff coalescing", () => {
     expect(byEvent("project.changed").length).toBe(1);
     expect(byEvent("file.opened").length).toBe(1);
     expect(byEvent("file.opened")[0].payload).toMatchObject({
-      path: "<local-evidence>/perf-test/a.txt",
+      path: "/tmp/perf-test/a.txt",
     });
     expect(byEvent("view.activated").length).toBe(1);
     expect(byEvent("file.closed").length).toBe(0);
@@ -98,7 +98,7 @@ describe("startPluginHooks — sessions diff coalescing", () => {
     const created = useSessions
       .getState()
       // P5(같은 root 중복 금지) — 첫 테스트와 다른 root 여야 새 프로젝트가 생긴다.
-      .addProject({ alias: "perf2", root: "<local-evidence>/perf-test-2" });
+      .addProject({ alias: "perf2", root: "/tmp/perf-test-2" });
     expect(created.ok).toBe(true);
     await flush(); // 프로젝트 추가 이벤트를 먼저 소화
     events.length = 0;
@@ -106,7 +106,7 @@ describe("startPluginHooks — sessions diff coalescing", () => {
     const tab = useSessions.getState().projects.find((t) => t.title === "perf2")!;
     const opened = useSessions
       .getState()
-      .openFileView(tab.id, "<local-evidence>/perf-test/b.txt");
+      .openFileView(tab.id, "/tmp/perf-test/b.txt");
     expect(opened.ok).toBe(true);
     await flush();
     expect(events.filter((e) => e.event === "file.opened").length).toBe(1);

@@ -187,7 +187,7 @@ describe("certified release installation", () => {
   it.each([
     "https://github.com/example/weather-plugin.git",
     "example/weather-plugin",
-    "<local-evidence>/weather-plugin",
+    "/tmp/weather-plugin",
   ])("rejects a repository or filesystem installation source: %s", async (source) => {
     seedCertifiedFixture();
     const result = await execute("plugin.install", { source }, {});

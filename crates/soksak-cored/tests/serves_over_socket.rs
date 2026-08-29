@@ -82,7 +82,7 @@ impl Helper {
 /// 테스트 루트 — 홈 아래 고정 경로다(재사용·멱등).
 ///
 /// cargo 의 `CARGO_TARGET_TMPDIR` 을 쓰지 않는 이유가 있다: 유닉스 소켓 경로에는 OS 상한이
-/// 있어서(macOS ~104 바이트) `target<local-evidence>/...` 아래 워크트리 경로는 그것만으로 상한을 넘긴다.
+/// 있어서(macOS ~104 바이트) `target/tmp/...` 아래 워크트리 경로는 그것만으로 상한을 넘긴다.
 /// 짧고 고정된 루트라야 어디서 체크아웃해도 이 테스트가 돈다.
 fn fixture_dir(name: &str) -> PathBuf {
     let home = std::env::var("HOME").expect("HOME");
@@ -1298,7 +1298,7 @@ fn inspect_refuses_anything_outside_a_session_directory() {
     let real = deep.join("s.jsonl");
     std::fs::write(
         &real,
-        "{\"sessionId\":\"019d09a1-6bc4-7691-9458-088bde7fca3d\",\"cwd\":\"<local-evidence>\"}\n",
+        "{\"sessionId\":\"019d09a1-6bc4-7691-9458-088bde7fca3d\",\"cwd\":\"/tmp\"}\n",
     )
     .unwrap();
     let ok = helper.ask(json!({

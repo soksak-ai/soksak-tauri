@@ -23,7 +23,7 @@ use std::sync::Mutex;
 #[test]
 fn the_service_name_comes_from_the_environment_axis_not_the_framework() {
     let of = |id: &str| {
-        KekStore::for_identity(&soksak_core::identity::Identity::new("<local-evidence>/vault-axis", id))
+        KekStore::for_identity(&soksak_core::identity::Identity::new("/tmp/vault-axis", id))
             .service()
             .to_string()
     };

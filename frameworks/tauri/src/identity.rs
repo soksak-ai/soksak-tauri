@@ -34,15 +34,15 @@ mod tests {
     #[test]
     fn identity_is_a_value_not_an_ambient_read() {
         // 전역을 건드리지 않고 임의 정체성을 만들 수 있다 — 그것이 이 계약의 요점이다.
-        let dev = Identity::new("<local-evidence>/x-dev", "com.soksak.dev");
-        assert_eq!(dev.home(), Path::new("<local-evidence>/x-dev"));
+        let dev = Identity::new("/tmp/x-dev", "com.soksak.dev");
+        assert_eq!(dev.home(), Path::new("/tmp/x-dev"));
         assert!(!dev.is_release());
         assert_eq!(dev.cli_name(), "sok-dev");
     }
 
     #[test]
     fn release_identity_reads_release() {
-        let rel = Identity::new("<local-evidence>/x", "com.soksak.app");
+        let rel = Identity::new("/tmp/x", "com.soksak.app");
         assert!(rel.is_release());
         assert_eq!(rel.cli_name(), "sok");
     }
@@ -50,36 +50,36 @@ mod tests {
     #[test]
     fn two_identities_never_share_a_home() {
         // 홈과 identifier 가 함께 다니는 이유 — 따로 넘기면 어긋난 조합이 만들어진다.
-        let a = Identity::new("<local-evidence>/a", "com.soksak.dev");
-        let b = Identity::new("<local-evidence>/b", "com.soksak.debug");
+        let a = Identity::new("/tmp/a", "com.soksak.dev");
+        let b = Identity::new("/tmp/b", "com.soksak.debug");
         assert_ne!(a.home(), b.home());
         assert_ne!(a.identifier(), b.identifier());
     }
 
     #[test]
     fn paths_are_derived_from_the_identity_not_assembled_by_callers() {
-        let id = Identity::new("<local-evidence>/x-dev", "com.soksak.dev");
-        assert_eq!(id.path("plugins"), Path::new("<local-evidence>/x-dev/plugins"));
+        let id = Identity::new("/tmp/x-dev", "com.soksak.dev");
+        assert_eq!(id.path("plugins"), Path::new("/tmp/x-dev/plugins"));
         // 여러 세그먼트를 한 번에 받는다 — 호출자가 join 을 이어붙이면 그 자리마다
         // 홈 조립 규칙이 흩어진다(plugins.rs 가 workspaces/plugins 를 그렇게 만들었다).
         assert_eq!(
             id.path("workspaces/plugins"),
-            Path::new("<local-evidence>/x-dev/workspaces/plugins")
+            Path::new("/tmp/x-dev/workspaces/plugins")
         );
-        assert_eq!(id.path("run/ptyd.sock"), Path::new("<local-evidence>/x-dev/run/ptyd.sock"));
+        assert_eq!(id.path("run/ptyd.sock"), Path::new("/tmp/x-dev/run/ptyd.sock"));
     }
 
     #[test]
     fn an_absolute_argument_cannot_escape_the_home() {
         // Path::join 은 절대경로를 받으면 **베이스를 통째로 버린다**. 이 계약의 값은
         // "홈 아래"를 보장하는 데 있으므로, 탈출을 조용히 허용하면 계약이 거짓말이 된다.
-        let id = Identity::new("<local-evidence>/x-dev", "com.soksak.dev");
+        let id = Identity::new("/tmp/x-dev", "com.soksak.dev");
         let escaped = id.path("/etc/passwd");
-        assert_eq!(escaped, Path::new("<local-evidence>/x-dev/etc/passwd"));
+        assert_eq!(escaped, Path::new("/tmp/x-dev/etc/passwd"));
         // ".." 도 홈을 되돌리지 못한다.
         assert_eq!(
             id.path("../../etc/passwd"),
-            Path::new("<local-evidence>/x-dev/etc/passwd")
+            Path::new("/tmp/x-dev/etc/passwd")
         );
     }
 
@@ -91,7 +91,7 @@ mod tests {
             id.cli_name()
         }
         assert_eq!(
-            takes_core(Identity::new("<local-evidence>/x-debug", "com.soksak.debug")),
+            takes_core(Identity::new("/tmp/x-debug", "com.soksak.debug")),
             "sok-debug"
         );
     }

@@ -313,7 +313,7 @@ mod find_tests {
     #[test]
     fn a_missing_session_dir_finds_nothing() {
         assert_eq!(
-            find_newest_session("/nonexistent-home-xyz", "<local-evidence>/whatever").unwrap(),
+            find_newest_session("/nonexistent-home-xyz", "/tmp/whatever").unwrap(),
             None
         );
     }

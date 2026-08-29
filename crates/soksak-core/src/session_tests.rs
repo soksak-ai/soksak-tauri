@@ -102,7 +102,7 @@ fn a_real_session_path_still_reads() {
         .join("projects");
     let _ = std::fs::create_dir_all(&d);
     let f = d.join("s.jsonl");
-    std::fs::write(&f, "{\"sessionId\":\"accd937f-5c22-48c6-b83d-70a2e0f2e4aa\",\"cwd\":\"<local-evidence>\"}\n").unwrap();
+    std::fs::write(&f, "{\"sessionId\":\"accd937f-5c22-48c6-b83d-70a2e0f2e4aa\",\"cwd\":\"/tmp\"}\n").unwrap();
     let r = inspect_path(f.to_string_lossy().into());
     assert!(r.is_ok(), "정상 세션 경로가 거부됐다: {r:?}");
     let _ = std::fs::remove_dir_all(d.parent().unwrap().parent().unwrap());

@@ -36,7 +36,7 @@ beforeEach(() => {
 it("공통 record 계약 한 번으로 유한 프레임 시퀀스를 저장한다", async () => {
   const observed: number[] = [];
   const recording = recordWindowFrames({
-    dir: "<local-evidence>/framework-neutral-record",
+    dir: "/tmp/framework-neutral-record",
     frames: 2,
     intervalMs: 0,
     onFrame: (frame) => observed.push(frame),
@@ -50,7 +50,7 @@ it("공통 record 계약 한 번으로 유한 프레임 시퀀스를 저장한�
   expect(observed).toEqual([0, 1]);
   expect(vi.mocked(invoke)).toHaveBeenCalledOnce();
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("plugin:webview-capture|record", {
-    dir: "<local-evidence>/framework-neutral-record",
+    dir: "/tmp/framework-neutral-record",
     frames: 2,
     intervalMs: 0,
     frameTimeoutMs: WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS,
@@ -60,7 +60,7 @@ it("공통 record 계약 한 번으로 유한 프레임 시퀀스를 저장한�
 
 it("저장 budget을 프레임워크 분기 없이 producer에 그대로 전달하고 readiness를 보존한다", async () => {
   const recording = recordWindowFrames({
-    dir: "<local-evidence>/framework-neutral-budget-record",
+    dir: "/tmp/framework-neutral-budget-record",
     frames: 1,
     intervalMs: 0,
     maxBytes: 1_048_576,
@@ -70,7 +70,7 @@ it("저장 budget을 프레임워크 분기 없이 producer에 그대로 전달�
   await expect(recording.ready).resolves.toBeUndefined();
   await expect(recording).resolves.toBe(1);
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("plugin:webview-capture|record", {
-    dir: "<local-evidence>/framework-neutral-budget-record",
+    dir: "/tmp/framework-neutral-budget-record",
     frames: 1,
     intervalMs: 0,
     maxBytes: 1_048_576,
@@ -86,7 +86,7 @@ it("공통 producer deadline을 모든 프레임워크 호출에 명시한다", 
   expect(validWindowRecordFrameTimeoutMs(WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS + 1)).toBe(false);
 
   const defaultRecording = recordWindowFrames({
-    dir: "<local-evidence>/framework-neutral-default-deadline",
+    dir: "/tmp/framework-neutral-default-deadline",
     frames: 1,
     intervalMs: 0,
   });
@@ -98,7 +98,7 @@ it("공통 producer deadline을 모든 프레임워크 호출에 명시한다", 
   );
 
   const explicitRecording = recordWindowFrames({
-    dir: "<local-evidence>/framework-neutral-explicit-deadline",
+    dir: "/tmp/framework-neutral-explicit-deadline",
     frames: 1,
     intervalMs: 0,
     frameTimeoutMs: 25,
@@ -120,14 +120,14 @@ it("공통 recorder는 frames와 intervalMs를 변조하지 않고 producer 전�
 
   for (const frames of [0, -1, 1.5, 601, Number.NaN, Number.POSITIVE_INFINITY]) {
     expect(() => recordWindowFrames({
-      dir: "<local-evidence>/rejected-frames",
+      dir: "/tmp/rejected-frames",
       frames,
       intervalMs: 0,
     })).toThrow("frames");
   }
   for (const intervalMs of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
     expect(() => recordWindowFrames({
-      dir: "<local-evidence>/rejected-interval",
+      dir: "/tmp/rejected-interval",
       frames: 1,
       intervalMs,
     })).toThrow("intervalMs");

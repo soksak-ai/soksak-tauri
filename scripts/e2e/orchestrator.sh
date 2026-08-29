@@ -44,7 +44,7 @@ try: rpc("window.list", t=5)
 except Exception: print("FAIL: 앱 소켓 없음 — debug 앱 실행 필요"); sys.exit(1)
 
 # 데모 프로젝트를 별도 창에(전용 프리픽스). 이미 열려 있으면 그 창을 재사용(P6).
-demo = "<local-evidence>/soksak-e2e-orch-demo"
+demo = "/tmp/soksak-e2e-orch-demo"
 os.makedirs(demo, exist_ok=True)
 r = rpc("window.open", {"root": demo}); time.sleep(3)
 w_demo = r.get("label") or r.get("existingWindow")

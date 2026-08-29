@@ -74,7 +74,7 @@ export function registerPtySessionCatalog(): void {
     returns: "{ session, attached }",
     message: (d) => `headless session ${d.session} ${d.attached ? "attached" : "spawned"}`,
     errors: ["INVALID_PARAMS", "INTERNAL"],
-    examples: ['pty.session.spawn \'{"session":"agent-k3f9a2-1","cwd":"<local-evidence>"}\''],
+    examples: ['pty.session.spawn \'{"session":"agent-k3f9a2-1","cwd":"/tmp"}\''],
     handler: async (p) => {
       const session = sessionOf(p);
       if (!session) return invalid("session 필요");

@@ -96,7 +96,7 @@ describe("낭독 축 — 표시(message)/낭독(speak) 둘뿐(§3)", () => {
   });
   it("speak 있음 = 성공·실패 불문 speak(outcome)가 문장 — 경로는 message(표시)에만", () => {
     const s = spec((o) => (o.ok ? "화면을 저장했어요." : o.message));
-    expect(effectiveSpeak(s, out("저장했습니다: <local-evidence>/a.png"))).toBe("화면을 저장했어요.");
+    expect(effectiveSpeak(s, out("저장했습니다: /tmp/a.png"))).toBe("화면을 저장했어요.");
     expect(effectiveSpeak(s, out("실패 진단", false))).toBe("실패 진단");
   });
   it('speak "" = 침묵 — say 류 되먹임의 유일한 차단점', () => {

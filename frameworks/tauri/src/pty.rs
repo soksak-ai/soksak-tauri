@@ -830,7 +830,7 @@ mod seam_tests {
     /// 전부 그 홈에서 파생되므로, 호출마다 홈을 받으면 한 세션 맵에 두 데몬의 세션이 섞인다.
     #[test]
     fn a_manager_carries_its_identity_instead_of_reading_the_ambient_home() {
-        let id = Identity::new("<local-evidence>/soksak-pty-seam-dev", "com.soksak.dev");
+        let id = Identity::new("/tmp/soksak-pty-seam-dev", "com.soksak.dev");
         let manager = super::PtyManager::new(id.clone());
         assert_eq!(manager.identity(), &id);
         // 전역을 읽었다면 이 구분이 사라진다 — 두 홈이 하나로 접힌다.
@@ -898,7 +898,7 @@ mod seam_tests {
     #[test]
     fn the_fallback_notice_needs_only_a_ledger() {
         let link = super::daemon::Link::new(
-            Identity::new("<local-evidence>/soksak-pty-seam-dev", "com.soksak.dev"),
+            Identity::new("/tmp/soksak-pty-seam-dev", "com.soksak.dev"),
             None,
         );
         let ledger = Recorder::default();

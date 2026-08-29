@@ -32,7 +32,7 @@ function project(activePaneId: string): Project {
   return {
     id: "t1",
     title: "P",
-    root: "<local-evidence>/arrangement",
+    root: "/tmp/arrangement",
     sidebarOpen: true,
     leftRailPlacement: { mode: "flow" },
     rightOpen: false,

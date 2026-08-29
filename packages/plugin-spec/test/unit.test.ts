@@ -58,7 +58,7 @@ describe("public unit identity single source", () => {
     }
     for (const path of [
       "",
-      "<local-evidence>/plugin.json",
+      "/tmp/plugin.json",
       "../plugin.json",
       "dist/../plugin.json",
       "dist//plugin.json",

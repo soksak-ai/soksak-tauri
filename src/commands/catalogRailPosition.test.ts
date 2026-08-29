@@ -38,7 +38,7 @@ function project(
   return {
     id: "t1",
     title: "P",
-    root: "<local-evidence>/rail-position",
+    root: "/tmp/rail-position",
     sidebarOpen: true,
     ...(placement ? { leftRailPlacement: placement } : {}),
     rightOpen: false,

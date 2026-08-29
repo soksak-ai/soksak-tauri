@@ -111,7 +111,7 @@ describe("표면 실측", () => {
 
 describe("금지 패턴", () => {
   it("소켓 경로 기본값은 어느 파일에서든 잡힌다", () => {
-    write("bad.mjs", 'const S = process.env.SOKSAK_SOCKET || "<local-evidence>/x.sock";\n');
+    write("bad.mjs", 'const S = process.env.SOKSAK_SOCKET || "/tmp/x.sock";\n');
     const [row] = scanFiles(root);
     expect(row.banned.map((b) => b.name)).toEqual(["socket-default"]);
     expect(row.banned[0].line).toBe(1);

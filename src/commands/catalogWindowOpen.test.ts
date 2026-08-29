@@ -40,7 +40,7 @@ it("window.open은 자동화가 포커스를 보존하도록 focus:false를 네�
 
   const result = await execute(
     "window.open",
-    { root: "<machine-path>/soksak/core", focus: false },
+    { root: "/workspace/soksak/core", focus: false },
     {},
   );
 

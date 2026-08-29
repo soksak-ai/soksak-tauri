@@ -52,12 +52,12 @@ fn example_prefix_follows_binary_identity() {
     let spec = json!({
         "name": "window.snapshot",
         "description": "capture the window",
-        "examples": ["window.snapshot '{\"path\":\"<local-evidence>/s.png\"}'"],
+        "examples": ["window.snapshot '{\"path\":\"/tmp/s.png\"}'"],
     });
     let md = format_command_md(&spec);
     let bin = bin_name_for_env(default_env());
     assert!(
-        md.contains(&format!("{bin} window.snapshot '{{\"path\":\"<local-evidence>/s.png\"}}'")),
+        md.contains(&format!("{bin} window.snapshot '{{\"path\":\"/tmp/s.png\"}}'")),
         "예제에 이 바이너리 프리픽스가 붙어야 한다: {md}"
     );
     // 데이터가 형태-only 라 이중 프리픽스(bin bin)가 생기지 않는다.

@@ -19,7 +19,7 @@ import {
   windowsUnder,
 } from "./fixtureWindow.mjs";
 
-const ROOT = "<machine-path>/.soksak-e2e/rail-border";
+const ROOT = "/workspace/.soksak-e2e/rail-border";
 
 /** 최소 앱 대역 — 장부 한 벌과 호출 기록만 갖는다. */
 function fakeApp({ projects = [], dead = new Set(), openLabel = "w-new" } = {}) {
@@ -191,7 +191,7 @@ describe("replaceFixtureWindow", () => {
     const app = fakeApp({
       projects: [
         { root: ROOT, window: "w-mixed" },
-        { root: "<machine-path>/real-project", window: "w-mixed" },
+        { root: "/workspace/real-project", window: "w-mixed" },
       ],
     });
     await expect(replaceFixtureWindow(app.rpc, ROOT, app.opts)).rejects.toThrow(/함께 든 창/);
@@ -205,11 +205,11 @@ describe("회수", () => {
     const app = fakeApp({
       projects: [
         { root: ROOT, window: "w-ours" },
-        { root: "<machine-path>/project", window: "w-user" },
+        { root: "/workspace/project", window: "w-user" },
       ],
     });
     expect(await releaseFixtureWindow(app.rpc, ROOT, app.opts)).toBe("w-ours");
-    expect(app.map).toEqual([{ root: "<machine-path>/project", window: "w-user" }]);
+    expect(app.map).toEqual([{ root: "/workspace/project", window: "w-user" }]);
     // 두 번째 호출은 조용히 없음이다.
     expect(await releaseFixtureWindow(app.rpc, ROOT, app.opts)).toBeNull();
   });
@@ -234,9 +234,9 @@ describe("windowsForExactRoots", () => {
       { root: "/fixtures/multiwindow/a", window: "w-a" },
       { root: "/fixtures/multiwindow/p6", window: "w-b" },
       { root: "/fixtures/multiwindow/unknown", window: "w-x" },
-      { root: "<machine-path>/work/soksak-e2e-user-project", window: "w-user" },
+      { root: "/workspace/work/soksak-e2e-user-project", window: "w-user" },
       { root: "/fixtures/multiwindow/a", window: "w-mixed" },
-      { root: "<machine-path>/work/real", window: "w-mixed" },
+      { root: "/workspace/work/real", window: "w-mixed" },
     ];
     expect(windowsForExactRoots(map, [
       "/fixtures/multiwindow/a",
@@ -265,7 +265,7 @@ describe("emptyWorkspaceWindows", () => {
 });
 
 describe("저장된 픽스처 snapshot batch 회수", () => {
-  const FIELD = "<machine-path>/.soksak-e2e";
+  const FIELD = "/workspace/.soksak-e2e";
 
   it("N snapshots도 entries 1회 + deleteMany 1회이며 per-key get/delete는 0회다", async () => {
     const entries = [
@@ -315,14 +315,14 @@ describe("저장된 픽스처 snapshot batch 회수", () => {
           ns: "core",
           entries: [
             { key: "windows", value: { slots: [] } },
-            { key: "window/w-user", value: { projects: [{ root: "<machine-path>/work" }] } },
+            { key: "window/w-user", value: { projects: [{ root: "/workspace/work" }] } },
             { key: "window/w-user#prev", value: { projects: [{ root: `${FIELD}/old-fixture` }] } },
             { key: "window/w-empty", value: { projects: [] } },
             { key: "window/w-unproven", value: { projects: [{ root: `${FIELD}/ok` }] } },
             { key: "window/w-unproven#prev", value: { projects: [] } },
             { key: "window/w-fixture", value: { projects: [{ root: `${FIELD}/ok` }] } },
             { key: "window/w-fixture#prev", value: { projects: [{ root: `${FIELD}/ok` }] } },
-            { key: "window/w-user-named", value: { projects: [{ root: "<machine-path>/work/soksak-e2e-important" }] } },
+            { key: "window/w-user-named", value: { projects: [{ root: "/workspace/work/soksak-e2e-important" }] } },
           ],
         },
       };

@@ -8,7 +8,7 @@ use serde_json::json;
 use soksak_core::identity::Identity;
 
 fn ctx() -> Ctx {
-    Ctx::new(Identity::new("<local-evidence>/soksak-cored-pty-test", "com.soksak.dev"))
+    Ctx::new(Identity::new("/tmp/soksak-cored-pty-test", "com.soksak.dev"))
 }
 
 /// 출력이 갈 곳 없는 터미널은 "떴는데 아무것도 안 나온다"가 된다 — 그 증상은 오류로 보이지 않는다.

@@ -7,7 +7,7 @@
 #      (빈 terminal-stack 오버레이가 클릭을 가로채지 않음 — z-index 회귀 가드).
 #   ④ 타창 프로젝트: 다른 창에 연 프로젝트가 이 창 레일에 뜨고, 클릭=그 창 포커스(P6).
 #
-# 멱등: 전용 임시 root(<local-evidence>/soksak-rail-{a,b,c})만 만지고, 시작 시 잔재를 청소하며, 끝에
+# 멱등: 전용 임시 root(/tmp/soksak-rail-{a,b,c})만 만지고, 시작 시 잔재를 청소하며, 끝에
 # 생성분(창·탭)을 닫고 recentProjects kv 에서 이 테스트 root 만 제거한다(사용자 실 최근 무접촉).
 #
 # 사용: bash scripts/e2e/project-rail.sh [--identity debug]
@@ -58,13 +58,13 @@ def roots(window=None):
 try: rpc("window.list", window="main", t=5)
 except Exception: print("FAIL: 앱 소켓 없음 — debug 앱 실행 필요"); sys.exit(1)
 
-for x in "abc": os.makedirs("<local-evidence>/soksak-rail-"+x, exist_ok=True)
+for x in "abc": os.makedirs("/tmp/soksak-rail-"+x, exist_ok=True)
 # 홈 워크스페이스 창 — 레일·프로젝트 시나리오의 기본 무대(main 은 컨트롤 플레인).
-os.makedirs("<local-evidence>/soksak-rail-home", exist_ok=True)
-_rh = rpc("window.open", {"root": "<local-evidence>/soksak-rail-home"}, window="main")
+os.makedirs("/tmp/soksak-rail-home", exist_ok=True)
+_rh = rpc("window.open", {"root": "/tmp/soksak-rail-home"}, window="main")
 W0 = _rh.get("label") or _rh.get("existingWindow"); time.sleep(4)
-# macOS <local-evidence> → <local-evidence> 심볼릭 — 코어가 canonicalize 하므로 realpath 로 비교한다.
-ra, rb, rc = [os.path.realpath("<local-evidence>/soksak-rail-"+x) for x in "abc"]
+# macOS /tmp → /tmp 심볼릭 — 코어가 canonicalize 하므로 realpath 로 비교한다.
+ra, rb, rc = [os.path.realpath("/tmp/soksak-rail-"+x) for x in "abc"]
 def rp(lst): return [os.path.realpath(x) for x in lst]
 
 # ── 청소(멱등): 이전 실행/세션이 남긴 테스트 창·탭(rail-* + e2e 잔재) ──
@@ -144,7 +144,7 @@ else: ng(f"타창 프로젝트 레일 미노출: {others}")
 rpc("window.close", {"label": wo}); time.sleep(0.5)
 rpc("window.close", {"label": W0}); time.sleep(0.5)
 # recents 에서 이 테스트 root 만 제거(project.recent.remove — 정공법, raw sqlite 아님).
-for r in (ra, rb, rc, os.path.realpath("<local-evidence>/soksak-rail-home")):
+for r in (ra, rb, rc, os.path.realpath("/tmp/soksak-rail-home")):
     rpc("project.recent.remove", {"root": r}, window="main")
 
 print()

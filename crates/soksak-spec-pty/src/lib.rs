@@ -556,7 +556,7 @@ mod tests {
 
     #[test]
     fn paths_are_protocol_keyed_under_home() {
-        let home = Path::new("<local-evidence>/h");
+        let home = Path::new("/tmp/h");
         assert_eq!(staged_bin_path(home), home.join("bin/soksak-ptyd-p1"));
         assert_eq!(control_socket_path(home), home.join("run/ptyd-p1.sock"));
         assert_eq!(stream_socket_path(home), home.join("run/ptyd-p1-stream.sock"));
@@ -568,7 +568,7 @@ mod tests {
 
     #[test]
     fn checkpoint_paths_and_aad_derive_from_the_reattach_key() {
-        let home = Path::new("<local-evidence>/h");
+        let home = Path::new("/tmp/h");
         assert_eq!(checkpoint_pubkey_path(home), home.join("pty/seal.pub"));
         let a = checkpoint_path(home, "w-1", "v2");
         let b = checkpoint_path(home, "w-2", "v2");
@@ -665,7 +665,7 @@ mod tests {
                 pane_id: "p1".into(),
                 cols: 80,
                 rows: 24,
-                cwd: Some("<local-evidence>".into()),
+                cwd: Some("/tmp".into()),
                 shell: "/bin/zsh".into(),
                 env: vec![("TERM".into(), "xterm-256color".into())],
                 env_remove: vec!["CLAUDECODE".into()],

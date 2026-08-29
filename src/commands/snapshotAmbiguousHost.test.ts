@@ -27,19 +27,19 @@ registerCatalog();
 
 describe("window.snapshot — 수행자가 여럿이면 경로에 쓰지 않는다", () => {
   it("경로를 주었는데 호스트가 둘이면 이름으로 거절한다", async () => {
-    const out = await execute("window.snapshot", { path: "<local-evidence>/shot.png" }, { hosts: 2 });
+    const out = await execute("window.snapshot", { path: "/tmp/shot.png" }, { hosts: 2 });
     expect(out.ok, "둘이 같은 경로에 써서 하나가 사라지는데 성공을 답했다").toBe(false);
     expect(out.code).toBe("AMBIGUOUS_HOST");
     expect(out.message).toContain("base64");
   });
 
   it("호스트가 하나면 지나간다 — 겹치지 않는 부름까지 막지 않는다", async () => {
-    const out = await execute("window.snapshot", { path: "<local-evidence>/shot.png" }, { hosts: 1 });
+    const out = await execute("window.snapshot", { path: "/tmp/shot.png" }, { hosts: 1 });
     expect(out.code).not.toBe("AMBIGUOUS_HOST");
   });
 
   it("수를 안 알려줬으면 하나로 본다 — 모름을 여럿으로 읽으면 멀쩡한 부름이 막힌다", async () => {
-    const out = await execute("window.snapshot", { path: "<local-evidence>/shot.png" }, {});
+    const out = await execute("window.snapshot", { path: "/tmp/shot.png" }, {});
     expect(out.code).not.toBe("AMBIGUOUS_HOST");
   });
 

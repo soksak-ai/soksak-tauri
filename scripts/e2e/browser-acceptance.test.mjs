@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { namedRunReport } from "./browser-acceptance.mjs";
 import { evidenceRunPath } from "./lib/evidence-store.mjs";
 
-const ROOT = path.join(process.env.HOME ?? "<local-evidence>", ".soksak-e2e/evidence/.acceptance-read-test");
+const ROOT = path.join(process.env.HOME ?? "/tmp", ".soksak-e2e/evidence/.acceptance-read-test");
 
 function writeRun(runId, body = { identity: { runId } }, bucket = "runs") {
   // 경로 규칙은 저장소가 소유한다 — 손으로 지으면 이 테스트가 규칙과 갈린다.

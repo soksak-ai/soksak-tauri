@@ -9,7 +9,7 @@ import { parseManifest } from "../plugins/spec";
 
 // 부트 모델(P3): 초기 tabs 는 비어 있고 main.tsx 가 bootstrapFirstProject 로
 // 첫 프로젝트를 만든다 — 테스트도 같은 경로로 t1 을 준비한 뒤 스냅샷.
-useSessions.getState().bootstrapFirstProject("<local-evidence>/soksak-test-root");
+useSessions.getState().bootstrapFirstProject("/tmp/soksak-test-root");
 
 // 시작 상태 스냅샷(데이터만) — 각 테스트 전 복원.
 const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
@@ -216,7 +216,7 @@ describe("addProject — 초기 program", () => {
     try {
       const r = useSessions.getState().addProject({
         alias: "px",
-        root: "<local-evidence>/soksak-test-addproject",
+        root: "/tmp/soksak-test-addproject",
         program: "terminal-prog-test",
       });
       expect(r.ok).toBe(true);
@@ -240,7 +240,7 @@ describe("addProject — 초기 program", () => {
   it("program 생략 시 빈 스켈레톤(뷰 0, viewId 미반환) — 기존 설계 유지", () => {
     const r = useSessions.getState().addProject({
       alias: "",
-      root: "<local-evidence>/soksak-test-addproject-empty",
+      root: "/tmp/soksak-test-addproject-empty",
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -252,7 +252,7 @@ describe("addProject — 초기 program", () => {
   it("미등록 program 은 빈 스켈레톤으로 격하(뷰 생성 불가 — makeContent 계약)", () => {
     const r = useSessions.getState().addProject({
       alias: "",
-      root: "<local-evidence>/soksak-test-addproject-unreg",
+      root: "/tmp/soksak-test-addproject-unreg",
       program: "no-such-program",
     });
     expect(r.ok).toBe(true);
@@ -288,7 +288,7 @@ describe("addViewToGroup — viewContract(계약-핀) 해소", () => {
       id,
     );
     if (!manifest) throw new Error(`픽스처 매니페스트 불량: ${validation.errors.join("; ")}`);
-    return { manifest, dir: `<local-evidence>/${id}`, source: "dev", status };
+    return { manifest, dir: `/tmp/${id}`, source: "dev", status };
   }
 
   beforeEach(() => {

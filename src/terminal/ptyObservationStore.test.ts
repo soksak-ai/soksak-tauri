@@ -31,9 +31,9 @@ describe("ptyObservationStore", () => {
     registerPtyObservation("p1");
     const seen: string[] = [];
     subscribeObservedCwd("p1", (c) => seen.push(c));
-    feedPtyOutput("p1", "\x1b]7;file://<local-evidence>/work\x07");
-    expect(getObservedCwd("p1")).toBe("<local-evidence>/work");
-    expect(seen).toEqual(["<local-evidence>/work"]);
+    feedPtyOutput("p1", "\x1b]7;file:///tmp/work\x07");
+    expect(getObservedCwd("p1")).toBe("/tmp/work");
+    expect(seen).toEqual(["/tmp/work"]);
   });
 
   it("구독 즉시 현재값이 있으면 1회 통지(폴링 없음)", () => {

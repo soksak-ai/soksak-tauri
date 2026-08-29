@@ -14,7 +14,7 @@ import fs from "node:fs";
 import { requireSocket } from "./lib/client.mjs";
 
 const SOCKET = requireSocket();
-const MARKER = "file://" + (process.env.MARKER || "<local-evidence>/marker.html");
+const MARKER = "file://" + (process.env.MARKER || "/tmp/marker.html");
 
 let sock, seq = 0;
 const pending = new Map();
@@ -107,7 +107,7 @@ async function main() {
   ok(opened.ok, `browser open(마커) → tab ${openedTab}`);
   await sleep(1500); // 페이지 로드 + 컴포지트
 
-  const shot = "<local-evidence>/soksak-capture-test.png";
+  const shot = "/tmp/soksak-capture-test.png";
   const snap = await rpc("window.snapshot", { path: shot });
   ok(snap.ok && fs.existsSync(shot), `window.snapshot → ${shot}`);
 

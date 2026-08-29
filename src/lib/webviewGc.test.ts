@@ -42,7 +42,7 @@ function tab(views: Tab[]): Project {
     rightOpen: false,
     rightView: null,
     leftLayout: splitLeaf({ viewKeys: [], activeViewKey: "" }),
-    root: "<local-evidence>",
+    root: "/tmp",
     spaces: [content(views)],
     activeSpaceId: "c1",
   };

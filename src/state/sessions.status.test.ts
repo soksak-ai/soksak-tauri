@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { allGroups, useSessions, type Tab } from "./sessions";
 
-useSessions.getState().bootstrapFirstProject("<local-evidence>/soksak-status-test");
+useSessions.getState().bootstrapFirstProject("/tmp/soksak-status-test");
 const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;
 

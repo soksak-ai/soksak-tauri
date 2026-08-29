@@ -674,7 +674,7 @@ mod tests {
     // 해석 기준은 인자로 받은 정체성의 홈이다 — 그 홈이 에러 메시지에 그대로 나온다.
     #[test]
     fn sidecar_scheme_resolution() {
-        let id = Identity::new("<local-evidence>/soksak-sidecar-home", "com.soksak.dev");
+        let id = Identity::new("/tmp/soksak-sidecar-home", "com.soksak.dev");
         assert_eq!(resolve_sidecar_cmd(&id, "/bin/sh").unwrap(), "/bin/sh");
         assert_eq!(resolve_sidecar_cmd(&id, "claude").unwrap(), "claude");
         assert!(resolve_sidecar_cmd(&id, "sidecar:").is_err());
@@ -683,7 +683,7 @@ mod tests {
         let e = resolve_sidecar_cmd(&id, "sidecar:definitely-not-installed-xyz").unwrap_err();
         assert!(
             e.contains(
-                "<local-evidence>/soksak-sidecar-home/sidecars/soksak-sidecar-definitely-not-installed-xyz/dist/"
+                "/tmp/soksak-sidecar-home/sidecars/soksak-sidecar-definitely-not-installed-xyz/dist/"
             ),
             "{e}"
         );
