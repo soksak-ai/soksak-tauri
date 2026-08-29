@@ -58,7 +58,7 @@ describe("window.record maxBytes", () => {
     expect(getSpec("window.record")?.params.maxBytes).toMatchObject({ type: "number" });
 
     const result = await execute("window.record", {
-      dir: "/tmp/budget-record",
+      dir: "<local-evidence>/budget-record",
       frames: 3,
       intervalMs: 7,
       maxBytes: 4_096,
@@ -66,11 +66,11 @@ describe("window.record maxBytes", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      data: { dir: "/tmp/budget-record", frames: 3, maxBytes: 4_096 },
+      data: { dir: "<local-evidence>/budget-record", frames: 3, maxBytes: 4_096 },
     });
     expect(recordWindowFrames).toHaveBeenCalledOnce();
     expect(recordWindowFrames).toHaveBeenCalledWith({
-      dir: "/tmp/budget-record",
+      dir: "<local-evidence>/budget-record",
       frames: 3,
       intervalMs: 7,
       maxBytes: 4_096,
@@ -80,7 +80,7 @@ describe("window.record maxBytes", () => {
 
   it.each([1, 1_073_741_824])("경계값 %d bytes를 그대로 허용한다", async (maxBytes) => {
     const result = await execute("window.record", {
-      dir: "/tmp/budget-boundary",
+      dir: "<local-evidence>/budget-boundary",
       frames: 1,
       maxBytes,
     }, {});
@@ -91,13 +91,13 @@ describe("window.record maxBytes", () => {
 
   it("budget 생략도 응답에 null로 명시하고 producer에는 가짜 제한을 만들지 않는다", async () => {
     const result = await execute("window.record", {
-      dir: "/tmp/unbudgeted-record",
+      dir: "<local-evidence>/unbudgeted-record",
       frames: 1,
     }, {});
 
     expect(result).toMatchObject({ ok: true, data: { maxBytes: null } });
     expect(recordWindowFrames).toHaveBeenCalledWith({
-      dir: "/tmp/unbudgeted-record",
+      dir: "<local-evidence>/unbudgeted-record",
       frames: 1,
       intervalMs: 40,
       frameTimeoutMs: 8_000,
@@ -114,7 +114,7 @@ describe("window.record maxBytes", () => {
     Number.POSITIVE_INFINITY,
   ])("잘못된 budget %s를 producer 호출 전에 INVALID_PARAMS로 거부한다", async (maxBytes) => {
     const result = await execute("window.record", {
-      dir: "/tmp/rejected-budget",
+      dir: "<local-evidence>/rejected-budget",
       frames: 1,
       maxBytes,
     }, {});
@@ -129,7 +129,7 @@ describe("window.record producer deadline", () => {
     expect(getSpec("window.record")?.params.frameTimeoutMs).toMatchObject({ type: "number" });
 
     const result = await execute("window.record", {
-      dir: "/tmp/deadline-record",
+      dir: "<local-evidence>/deadline-record",
       frames: 3,
       frameTimeoutMs: 25,
     }, {});
@@ -145,7 +145,7 @@ describe("window.record producer deadline", () => {
     "잘못된 frameTimeoutMs %s를 producer 전에 거부한다",
     async (frameTimeoutMs) => {
       const result = await execute("window.record", {
-        dir: "/tmp/rejected-deadline",
+        dir: "<local-evidence>/rejected-deadline",
         frames: 1,
         frameTimeoutMs,
       }, {});
@@ -160,7 +160,7 @@ describe("window.record strict sequence input", () => {
     "frames %s를 몰래 clamp하지 않고 거부한다",
     async (frames) => {
       const result = await execute("window.record", {
-        dir: "/tmp/rejected-frames",
+        dir: "<local-evidence>/rejected-frames",
         frames,
       }, {});
       expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
@@ -172,7 +172,7 @@ describe("window.record strict sequence input", () => {
     "intervalMs %s를 몰래 clamp하지 않고 거부한다",
     async (intervalMs) => {
       const result = await execute("window.record", {
-        dir: "/tmp/rejected-interval",
+        dir: "<local-evidence>/rejected-interval",
         frames: 1,
         intervalMs,
       }, {});

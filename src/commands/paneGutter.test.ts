@@ -34,7 +34,7 @@ function fixture(): Project {
   return {
     id: "t1",
     title: "P",
-    root: "/tmp/pane-gutter",
+    root: "<local-evidence>/pane-gutter",
     sidebarOpen: false,
     rightOpen: false,
     rightView: null,

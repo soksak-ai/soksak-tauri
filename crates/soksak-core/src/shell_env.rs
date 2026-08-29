@@ -188,7 +188,7 @@ mod tests {
             ("LANG", "en_US.UTF-8"),
             ("LC_ALL", "C"),
             ("TZ", "UTC"),
-            ("TMPDIR", "/tmp"),
+            ("TMPDIR", "<local-evidence>"),
             ("SSH_AUTH_SOCK", "/run/ssh-agent.sock"),
             // 내부/민감 — 반드시 탈락
             ("SOKSAK_VAULT_KEY", "MASTER-LEAK"),
@@ -228,14 +228,14 @@ mod tests {
             &Some("tab-1".to_string()),
             &Some("w-1".to_string()),
             [("PATH".to_string(), "/usr/bin".to_string())].into_iter(),
-            Some("/tmp/x.sock"),
+            Some("<local-evidence>/x.sock"),
             &["CLAUDECODE"],
-            std::path::Path::new("/tmp"),
+            std::path::Path::new("<local-evidence>"),
             "/home/x",
         );
         let m: std::collections::HashMap<_, _> = env.into_iter().collect();
         assert_eq!(m.get("PATH").map(String::as_str), Some("/usr/bin"));
-        assert_eq!(m.get("SOKSAK_SOCKET").map(String::as_str), Some("/tmp/x.sock"));
+        assert_eq!(m.get("SOKSAK_SOCKET").map(String::as_str), Some("<local-evidence>/x.sock"));
         assert_eq!(m.get("SOKSAK_WINDOW").map(String::as_str), Some("w-1"));
         assert_eq!(m.get("SOKSAK_CALLER_TAB").map(String::as_str), Some("tab-1"));
         assert_eq!(remove, vec!["CLAUDECODE".to_string()]);
@@ -251,7 +251,7 @@ mod tests {
             std::iter::empty(),
             None,
             &[],
-            std::path::Path::new("/tmp"),
+            std::path::Path::new("<local-evidence>"),
             "",
         );
         assert!(!env.iter().any(|(k, _)| k == "SOKSAK_SOCKET"));
@@ -262,7 +262,7 @@ mod tests {
             std::iter::empty(),
             Some(""),
             &[],
-            std::path::Path::new("/tmp"),
+            std::path::Path::new("<local-evidence>"),
             "",
         );
         assert!(!env2.iter().any(|(k, _)| k == "SOKSAK_SOCKET"));

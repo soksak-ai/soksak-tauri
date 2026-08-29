@@ -1,4 +1,4 @@
-// macOS Dock 우클릭 메뉴 — "새 창"(제품 창 생성 계약). macOS 는 Dock 메뉴를 앱 델리게이트의
+// macOS Dock 우클릭 메뉴의 "새 창"은 제품의 창 생성 계약을 호출한다. macOS 는 Dock 메뉴를 앱 델리게이트의
 // applicationDockMenu: 로 가져간다(Apple 문서). NSApplication 에 setDockMenu API 가 없고 Tauri 도 Dock
 // 메뉴 API 를 노출하지 않으므로(트레이·NSApp Window/Help 메뉴만), 이 델리게이트 메서드가 유일한 정공법.
 //

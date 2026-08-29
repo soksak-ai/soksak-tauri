@@ -58,7 +58,7 @@ function tab(tabs: Tab[], activeTabId: string): Project {
     rightOpen: false,
     rightView: null,
     leftLayout: initialSidebarLayout([]),
-    root: "/tmp/p1",
+    root: "<local-evidence>/p1",
     spaces: [
       {
         id: "c1",
@@ -113,7 +113,7 @@ const render = (commitProjection = true) =>
     root.render(
       <ProjectionSlots
         projectId="p1"
-        root="/tmp/p1"
+        root="<local-evidence>/p1"
         paneId={null}
         side="left"
         commitProjection={commitProjection}

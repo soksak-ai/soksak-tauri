@@ -27,7 +27,7 @@ useProgramRegistry
     title: { en: "Terminal", ko: "터미널" },
   } as ContributedProgram);
 
-useSessions.getState().bootstrapFirstProject("/tmp/soksak-emptypanel");
+useSessions.getState().bootstrapFirstProject("<local-evidence>/soksak-emptypanel");
 registerCatalog();
 const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;

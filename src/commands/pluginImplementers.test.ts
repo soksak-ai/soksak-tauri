@@ -39,7 +39,7 @@ function fixtureRuntime(
     ...(providers.length > 0 ? { implements: providers } : {}),
   }, id);
   if (!manifest) throw new Error(validation.errors.join("; "));
-  return { manifest, dir: `/tmp/${id}`, source: "dev", status };
+  return { manifest, dir: `<local-evidence>/${id}`, source: "dev", status };
 }
 
 beforeEach(() => {

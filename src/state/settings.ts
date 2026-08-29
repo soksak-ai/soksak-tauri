@@ -33,7 +33,7 @@ interface SettingsState {
   language: Language;
   // 프로젝트(최상단) 탭 위치. left 면 사이드바 왼쪽 세로 레일.
   projectTabPosition: TabPosition;
-  // 컨텐츠(워크스페이스) 탭 위치. left 면 좌측 세로 스트립(제품 계약 138px).
+  // 컨텐츠(워크스페이스) 탭 위치. left 면 제품 계약의 138px 좌측 세로 스트립.
   contentTabPosition: TabPosition;
   // 분할 패널 헤더 모드(기본 title).
   splitHeaderMode: SplitHeaderMode;

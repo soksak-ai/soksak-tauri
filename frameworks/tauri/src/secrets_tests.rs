@@ -9,8 +9,8 @@ use crate::identity::Identity;
 // 생성만으로는 키체인에 닿지 않는다(keyring::Entry 는 read/write 에서만 만들어진다).
 #[test]
 fn the_kek_service_name_comes_from_the_identity() {
-    let dev = OsKekSource::for_identity(&Identity::new("/tmp/x-dev", "com.soksak.dev"));
-    let debug = OsKekSource::for_identity(&Identity::new("/tmp/x-debug", "com.soksak.debug"));
+    let dev = OsKekSource::for_identity(&Identity::new("<local-evidence>/x-dev", "com.soksak.dev"));
+    let debug = OsKekSource::for_identity(&Identity::new("<local-evidence>/x-debug", "com.soksak.debug"));
     assert_eq!(dev.service(), "com.soksak.dev");
     assert_ne!(dev.service(), debug.service(), "정체성이 KEK 를 가른다");
 }

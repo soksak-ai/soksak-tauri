@@ -1231,7 +1231,7 @@ mod tests {
 
     /// 검증용 부팅 상태. 이 표의 검사들은 **인자 해석**을 보는 것이라 어느 홈이든 같다.
     fn ctx() -> Ctx {
-        Ctx::new(Identity::new("/tmp/soksak-registry-test", "com.soksak.dev"))
+        Ctx::new(Identity::new("<local-evidence>/soksak-registry-test", "com.soksak.dev"))
     }
 
 

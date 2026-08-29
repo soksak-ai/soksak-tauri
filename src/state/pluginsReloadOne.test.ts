@@ -27,7 +27,7 @@ vi.mock("../plugins/loader", () => ({
 
 const ID = "soksak-plugin-demo";
 // checkout 폴더명은 plugin identity가 아니다. plugin.json과 선택 config가 id를 소유한다.
-const PATH = "/tmp/arbitrary-checkout";
+const PATH = "<local-evidence>/arbitrary-checkout";
 
 // 디스크의 현재 매니페스트 — 테스트가 중간에 바꾼다(저자가 파일을 고치는 행위).
 let onDisk: Record<string, unknown> = {};

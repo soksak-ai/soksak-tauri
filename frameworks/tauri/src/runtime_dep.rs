@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn cleanup_rejects_outside_whitelist() {
-        assert!(cleanup_stale("/etc/passwd".into(), vec!["/tmp".into()]).is_err());
+        assert!(cleanup_stale("/etc/passwd".into(), vec!["<local-evidence>".into()]).is_err());
     }
 
     #[test]

@@ -25,7 +25,7 @@ if [[ -n "$bad_hardlink" ]]; then
   exit 1
 fi
 
-stage="$(mktemp -d "${TMPDIR:-/tmp}/soksak-archive.XXXXXX")"
+stage="$(mktemp -d "${TMPDIR:-<local-evidence>}/soksak-archive.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 
 while IFS= read -r -d '' dir; do

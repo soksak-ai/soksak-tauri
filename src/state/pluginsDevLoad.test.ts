@@ -57,7 +57,7 @@ import { usePlugins, type PluginRuntime } from "./plugins";
 import { parseManifest } from "../plugins/spec";
 
 // 폴더명은 identity가 아니다. plugin.json id와 달라도 선언된 절대 source로 로드돼야 한다.
-const PATH = "/tmp/arbitrary-checkout";
+const PATH = "<local-evidence>/arbitrary-checkout";
 const ID = "soksak-plugin-demo";
 
 function demoRuntime(status: PluginRuntime["status"]): PluginRuntime {

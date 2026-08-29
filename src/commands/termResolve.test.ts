@@ -35,7 +35,7 @@ describe("resolveTermTab — 코어 호스트 없는 플러그인 터미널은 s
       },
       sendInput: (data) => void sends.push(data),
     });
-    pushObservedCwd("tab-v37", "/tmp/plug");
+    pushObservedCwd("tab-v37", "<local-evidence>/plug");
 
     // 명시 tab="tab-v37" — 코어 호스트엔 없지만 substrate 에 있다.
     const r = resolveTermTab({ tab: "tab-v37" }, {});
@@ -51,7 +51,7 @@ describe("resolveTermTab — 코어 호스트 없는 플러그인 터미널은 s
     expect(sends).toEqual(["echo hi\r"]);
 
     // cwd 는 substrate 관찰에서.
-    expect(r!.getCwd()).toBe("/tmp/plug");
+    expect(r!.getCwd()).toBe("<local-evidence>/plug");
   });
 
   it("어디에도 없는 탭은 null(TARGET_NOT_FOUND 원천)", () => {
@@ -59,7 +59,7 @@ describe("resolveTermTab — 코어 호스트 없는 플러그인 터미널은 s
   });
 
   it("substrate 관찰만 있고 IO 미등록이면: valid 하지만 read/send 는 준비 안 됨(undefined/false)", () => {
-    pushObservedCwd("tab-v99", "/tmp/x"); // pushObservedCwd 는 관찰 미존재면 no-op 이므로 먼저 등록 필요.
+    pushObservedCwd("tab-v99", "<local-evidence>/x"); // pushObservedCwd 는 관찰 미존재면 no-op 이므로 먼저 등록 필요.
     // 관찰 자체가 없으면 valid 가 아님 — IO 도 cwd 도 없는 순수 ghost 와 구분하기 위해 registerPtyIo 로
     // 관찰을 만들고 즉시 해지하는 대신, 여기선 registerPtyIo 후 IO 만 비워 검증한다.
     const dispose = registerPtyIo("tab-v99", {

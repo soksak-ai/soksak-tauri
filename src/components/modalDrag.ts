@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 
-// 제품의 드래그 가능 모달(헤더 ⠿ 그립) 공용 훅. 위치 null = 기본(중앙 변환),
+// 드래그 가능 모달(헤더 ⠿ 그립)의 공용 훅. 위치 null = 기본(중앙 변환),
 // 드래그하면 컨테이너 기준 절대 좌표로 고정된다.
 
 export function useDraggableModal() {

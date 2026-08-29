@@ -50,7 +50,7 @@ function tab(tabs: Tab[], activeTabId: string): Project {
     rightOpen: false,
     rightView: null,
     leftLayout: initialSidebarLayout([]),
-    root: "/tmp/p1",
+    root: "<local-evidence>/p1",
     spaces: [
       {
         id: "c1",
@@ -148,10 +148,10 @@ describe("ui.intent.open — R2(결부 문맥 배치·멱등 재사용)", () => 
 
   it("파일을 결부 그룹에 탭으로 열고, 같은 리소스는 기존 뷰를 재사용한다", async () => {
     useSessions.setState({ projects: [tab([], "")], activeId: "p1" });
-    const r1 = (await execute("ui.intent.open", { path: "/tmp/p1/a.md" }, {})) as { ok: boolean; data: Record<string, unknown> };
+    const r1 = (await execute("ui.intent.open", { path: "<local-evidence>/p1/a.md" }, {})) as { ok: boolean; data: Record<string, unknown> };
     expect(r1.ok).toBe(true);
     expect(r1.data.existing).toBe(false);
-    const r2 = (await execute("ui.intent.open", { path: "/tmp/p1/a.md" }, {})) as { ok: boolean; data: Record<string, unknown> };
+    const r2 = (await execute("ui.intent.open", { path: "<local-evidence>/p1/a.md" }, {})) as { ok: boolean; data: Record<string, unknown> };
     expect(r2.ok).toBe(true);
     expect(r2.data.existing).toBe(true);
     expect(r2.data.viewId).toBe(r1.data.viewId);

@@ -74,7 +74,7 @@ const ALLOWED = new Set([
   "data-project-active", // 활성 프로젝트 표식
   "data-project-id", // 슬롯 소속 프로젝트 id
   "data-hover", // 골 hover 위상
-  "data-k", // 테마 토큰 키(제품 DOM 계약이 유지하는 [data-k] 토큰)
+  "data-k", // 제품 DOM 계약이 유지하는 테마 토큰 키.
   "data-motion-hold", // 모션 정지 위상(motionDebug)
   // ── 테마 크롬 토큰 스탬프(theme/engine — chrome.* 슬롯을 루트에 새긴다) ──
   "data-icon-box", // 아이콘 상자 토큰

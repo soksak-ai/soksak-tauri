@@ -212,7 +212,7 @@ fn the_boot_arguments_are_values_this_process_hands_over() {
         Path::new("/h/cored.sock"),
         Path::new("/h"),
         "com.soksak.tauri.dev",
-        Path::new("/tmp/moved-data"),
+        Path::new("<local-evidence>/moved-data"),
         Some(Path::new("<machine-path>")),
         Some("/bin/zsh"),
     );
@@ -222,7 +222,7 @@ fn the_boot_arguments_are_values_this_process_hands_over() {
             "--socket", "/h/cored.sock",
             "--home", "/h",
             "--identifier", "com.soksak.tauri.dev",
-            "--data-dir", "/tmp/moved-data",
+            "--data-dir", "<local-evidence>/moved-data",
             "--user-home", "<machine-path>",
             "--login-shell", "/bin/zsh",
         ]
@@ -256,12 +256,12 @@ fn the_store_location_is_handed_over_never_re_derived() {
         Path::new("/h/cored.sock"),
         Path::new("/h"),
         "com.soksak.tauri.dev",
-        Path::new("/tmp/e2e-store"),
+        Path::new("<local-evidence>/e2e-store"),
         None,
         None,
     );
     let i = moved.iter().position(|a| a == "--data-dir").expect("저장소 위치를 넘긴다");
-    assert_eq!(moved[i + 1], "/tmp/e2e-store");
+    assert_eq!(moved[i + 1], "<local-evidence>/e2e-store");
 }
 
 /// 준비 완료 줄은 **그 소켓**을 말해야 한다. 아니면 우리가 부른 것이 cored 가 아니거나 다른

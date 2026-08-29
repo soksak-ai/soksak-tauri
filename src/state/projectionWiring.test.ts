@@ -56,7 +56,7 @@ function runtime(raw: Record<string, unknown>): PluginRuntime {
     raw.id as string,
   );
   if (!manifest) throw new Error(validation.errors.join("; "));
-  return { manifest, dir: `/tmp/${manifest.id}`, source: "dev", status: "enabled" };
+  return { manifest, dir: `<local-evidence>/${manifest.id}`, source: "dev", status: "enabled" };
 }
 
 function pluginView(id: string, pluginId: string, view: string): Tab {
@@ -71,7 +71,7 @@ function tab(tabs: Tab[], activeTabId: string): Project {
     rightOpen: false,
     rightView: null,
     leftLayout: initialSidebarLayout([]),
-    root: "/tmp/p1",
+    root: "<local-evidence>/p1",
     spaces: [
       {
         id: "c1",

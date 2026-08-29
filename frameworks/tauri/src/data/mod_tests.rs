@@ -24,8 +24,8 @@ fn the_db_path_follows_the_home_it_is_given() {
 fn data_dir_env_overrides_data_dir_in_debug() {
     use super::data_dir_from;
     assert_eq!(
-        data_dir_from(Some("/tmp/e2e-data"), Path::new("/home/max/.soksak-debug")),
-        PathBuf::from("/tmp/e2e-data"),
+        data_dir_from(Some("<local-evidence>/e2e-data"), Path::new("/home/max/.soksak-debug")),
+        PathBuf::from("<local-evidence>/e2e-data"),
         "SOKSAK_DATA_DIR 이 데이터 디렉토리를 그대로 지정"
     );
     assert_eq!(

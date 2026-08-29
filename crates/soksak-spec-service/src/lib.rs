@@ -459,7 +459,7 @@ mod tests {
 
     #[test]
     fn paths_are_protocol_keyed_under_home() {
-        let home = Path::new("/tmp/h");
+        let home = Path::new("<local-evidence>/h");
         assert_eq!(ledger_path(home), home.join("run/services-p1.json"));
         assert_eq!(
             log_path(home, "soksak-plugin-x"),

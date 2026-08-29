@@ -8,7 +8,7 @@
 # 밝은(≈230) 배경이고 앱 테마는 어두워(≈40), 임계 150 이 렌더/블랭크를 가른다 —
 # "탭 제목이 복원됐다"가 아니라 "페이지가 화면에 그려졌다"를 단언한다.
 #
-# 멱등: 전용 임시 root(/tmp/soksak-e2e-brestore-{a,b}) 창 2개 안에서만 동작 — 사용자
+# 멱등: 전용 임시 root(<local-evidence>/soksak-e2e-brestore-{a,b}) 창 2개 안에서만 동작 — 사용자
 # 워크스페이스 무접촉. 종료 시 생성 창·뷰를 닫고(스냅샷 prune, B1) 임시 root 를 지운다.
 # 앱은 실행 중이면 그대로 쓰고(중간에 재시작함), 없으면 번들을 띄운다.
 #
@@ -140,7 +140,7 @@ def nav(window, plugin, url):
 if not app_alive():
     launch()
 assert wait_socket(), "앱 소켓 없음"
-ra = "/tmp/soksak-e2e-brestore-a"; rb = "/tmp/soksak-e2e-brestore-b"
+ra = "<local-evidence>/soksak-e2e-brestore-a"; rb = "<local-evidence>/soksak-e2e-brestore-b"
 os.makedirs(ra, exist_ok=True); os.makedirs(rb, exist_ok=True)
 
 # 잔재 창 정리(멱등 재실행 대비): 이전 실행이 남긴 brestore 창을 먼저 닫는다.

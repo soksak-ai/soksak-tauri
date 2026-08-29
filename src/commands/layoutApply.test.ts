@@ -40,7 +40,7 @@ const terminalEnginePlugins: Record<string, PluginRuntime> = {
   },
 };
 
-useSessions.getState().bootstrapFirstProject("/tmp/soksak-layout-apply");
+useSessions.getState().bootstrapFirstProject("<local-evidence>/soksak-layout-apply");
 registerCatalog();
 
 const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));

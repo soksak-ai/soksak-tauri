@@ -629,7 +629,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
         dx: 100,
         steps: 3,
         durationMs: 0,
-        recordDir: "/tmp/drag-scan",
+        recordDir: "<local-evidence>/drag-scan",
         recordFrames: 7,
         recordIntervalMs: 0,
         recordLeadMs: 0,
@@ -638,7 +638,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       {},
     );
     expect(recordWindowFrames).toHaveBeenCalledWith({
-      dir: "/tmp/drag-scan",
+      dir: "<local-evidence>/drag-scan",
       frames: 7,
       intervalMs: 0,
       maxBytes: 4096,
@@ -648,7 +648,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       dragged: true,
       recording: {
         status: "complete",
-        dir: "/tmp/drag-scan",
+        dir: "<local-evidence>/drag-scan",
         requestedFrames: 7,
         frames: 7,
         mode: "realtime",
@@ -675,7 +675,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
     const executing = execute("ui.input.drag", {
       from: ADDR,
       dx: 100,
-      recordDir: "/tmp/drag-baseline",
+      recordDir: "<local-evidence>/drag-baseline",
     }, {});
     await Promise.resolve();
     expect(downs).toEqual([]);
@@ -706,13 +706,13 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       const result = await execute("ui.input.drag", {
         from: ADDR,
         dx: 100,
-        recordDir: "/tmp/drag-failed-recording",
+        recordDir: "<local-evidence>/drag-failed-recording",
       }, {});
       expect(result.data).toMatchObject({
         dragged: true,
         recording: {
           status: "failed",
-          dir: "/tmp/drag-failed-recording",
+          dir: "<local-evidence>/drag-failed-recording",
           requestedFrames: 120,
           mode: "realtime",
         },
@@ -729,7 +729,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
     const result = await execute("ui.input.drag", {
       from: ADDR,
       dx: 100,
-      recordDir: "/tmp/drag-invalid-budget",
+      recordDir: "<local-evidence>/drag-invalid-budget",
       recordMaxBytes,
     }, {});
     expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
@@ -887,7 +887,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
 
     const result = await execute("ui.input.click", {
       address: ADDR,
-      recordDir: "/tmp/click-transition",
+      recordDir: "<local-evidence>/click-transition",
       recordFrames: 9,
       recordIntervalMs: 16,
       recordLeadMs: 0,
@@ -896,7 +896,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
 
     expect(order).toEqual(["record", "click"]);
     expect(recordWindowFrames).toHaveBeenCalledWith({
-      dir: "/tmp/click-transition",
+      dir: "<local-evidence>/click-transition",
       frames: 9,
       intervalMs: 16,
       maxBytes: 4096,
@@ -906,7 +906,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
       clicked: true,
       recording: {
         status: "complete",
-        dir: "/tmp/click-transition",
+        dir: "<local-evidence>/click-transition",
         requestedFrames: 9,
         frames: 9,
         mode: "realtime",
@@ -930,7 +930,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
 
     const executing = execute("ui.input.click", {
       address: ADDR,
-      recordDir: "/tmp/click-baseline",
+      recordDir: "<local-evidence>/click-baseline",
     }, {});
     await Promise.resolve();
     expect(clicks).toEqual([]);
@@ -963,7 +963,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
 
     const result = await execute("ui.input.click", {
       address: ADDR,
-      recordDir: "/tmp/click-failed-recording",
+      recordDir: "<local-evidence>/click-failed-recording",
     }, {});
 
     expect(clicks).toEqual(["click"]);
@@ -971,7 +971,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
       clicked: true,
       recording: {
         status: "failed",
-        dir: "/tmp/click-failed-recording",
+        dir: "<local-evidence>/click-failed-recording",
         requestedFrames: 40,
         mode: "realtime",
       },
@@ -983,7 +983,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     mountNode(`<button data-node="btn">tab</button>`);
     const result = await execute("ui.input.click", {
       address: ADDR,
-      recordDir: "/tmp/click-invalid-budget",
+      recordDir: "<local-evidence>/click-invalid-budget",
       recordMaxBytes,
     }, {});
     expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
@@ -1005,7 +1005,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     });
     const executing = execute("ui.input.click", {
       address: ADDR,
-      recordDir: "/tmp/click-trace",
+      recordDir: "<local-evidence>/click-trace",
       recordFrames: 2,
       traceAddresses: [ADDR],
     }, {});
@@ -1036,7 +1036,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
 
     const result = await execute("ui.input.click", {
       address: ADDR,
-      recordDir: "/tmp/click-trace-failed-tail",
+      recordDir: "<local-evidence>/click-trace-failed-tail",
       recordFrames: 3,
       traceAddresses: [ADDR],
     }, {});

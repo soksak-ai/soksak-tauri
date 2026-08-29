@@ -163,7 +163,7 @@ fn a_rotation_leaves_another_writers_scratch_file_alone() {
 /// 이름이 갈리는 축은 둘이다 — 프로세스(pid)와 한 프로세스 안의 동시 회전(번호).
 #[test]
 fn each_rotation_claims_its_own_scratch_name() {
-    let db = std::path::Path::new("/tmp/soksak-ring-name/soksak.db");
+    let db = std::path::Path::new("<local-evidence>/soksak-ring-name/soksak.db");
     let a = snapshot_tmp_path(db);
     let b = snapshot_tmp_path(db);
     assert_ne!(a, b, "같은 프로세스의 두 회전이 한 이름을 쓴다");

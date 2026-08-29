@@ -43,7 +43,7 @@ fn 대용량_단일_라인은_온전히_캡처된다() {
     // the trailing summary line survives intact — no truncation of a multi-KB release.json.
     let out = run_once(
         "/bin/sh".into(),
-        "/tmp".into(),
+        "<local-evidence>".into(),
         "head -c 50000 /dev/zero | tr '\\0' X".into(),
         Some(10),
         None,
@@ -67,7 +67,7 @@ fn env_는_자식에만_주입된다() {
     env.insert("SOKSAK_TEST_ENV".to_string(), "injected-marker-xyz".to_string());
     let out = run_once(
         "/bin/sh".into(),
-        "/tmp".into(),
+        "<local-evidence>".into(),
         "printf %s \"$SOKSAK_TEST_ENV\"".into(),
         Some(10),
         Some(env),
@@ -100,7 +100,7 @@ fn 셸은_인자로_받은_경로다() {
 
     let mut child = spawn_shell(
         &fake.to_string_lossy(),
-        "/tmp",
+        "<local-evidence>",
         "printf ' and the command'",
         None,
     )
@@ -125,7 +125,7 @@ fn 셸은_인자로_받은_경로다() {
 #[test]
 fn 스폰_그룹킬_수명() {
     // 손자를 낳는 셸 명령 — 그룹 킬이 트리 전체를 회수하는지.
-    let child = spawn_shell("/bin/sh", "/tmp", "sleep 30 & sleep 30", None).expect("spawn");
+    let child = spawn_shell("/bin/sh", "<local-evidence>", "sleep 30 & sleep 30", None).expect("spawn");
     let pid = child.id();
     let child = Arc::new(Mutex::new(child));
     std::thread::sleep(std::time::Duration::from_millis(200));

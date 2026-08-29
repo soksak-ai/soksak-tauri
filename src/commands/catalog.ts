@@ -2287,7 +2287,7 @@ export function registerCatalog(): void {
     returns: "{ projectId|null, root, children: [{name,dir}] }",
     message: (d) => tmsg("msg.explorer.list", { n: ((d.children as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND", "INTERNAL"],
-    examples: ["explorer.list", 'explorer.list \'{"path":"/tmp"}\''],
+    examples: ["explorer.list", 'explorer.list \'{"path":"<local-evidence>"}\''],
     handler: async (p, ctx) => {
       const t = resolveProject(p, ctx);
       const path = (p.path as string) ?? t?.root ?? null;

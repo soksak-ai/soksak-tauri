@@ -1,6 +1,6 @@
 // 경로 규칙의 검사 — 규칙은 pathx.rs 가, 그 증명은 여기가 진다.
 //
-// macOS 의 /tmp·/var 는 그 자체가 심링크다. 실측 경로를 쓰지 않으면 이 검사들이
+// macOS 의 <local-evidence>·/var 는 그 자체가 심링크다. 실측 경로를 쓰지 않으면 이 검사들이
 // 자기 함정에 빠진다(두 번 밟았다).
 use super::*;
 
@@ -89,12 +89,12 @@ fn the_verdict_follows_the_home_it_is_given() {
 
 #[test]
 fn a_parent_component_is_refused_outright() {
-    assert!(reject_symlink_components(Path::new("/tmp/../etc")).is_err());
+    assert!(reject_symlink_components(Path::new("<local-evidence>/../etc")).is_err());
 }
 
 #[test]
 fn a_plain_path_passes() {
-    // macOS 의 /tmp·/var 는 그 자체가 심링크다 — 실측 경로를 쓴다(이 함정을 두 번 밟았다).
+    // macOS 의 <local-evidence>·/var 는 그 자체가 심링크다 — 실측 경로를 쓴다(이 함정을 두 번 밟았다).
     let d = std::env::temp_dir()
         .canonicalize()
         .expect("실측 경로")

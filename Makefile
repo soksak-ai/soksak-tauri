@@ -71,14 +71,14 @@ install: ## 의존성 설치(멱등)
 icons: ## 앱 아이콘 전체 재생성(SVG→마스터1024 + base/dev/debug 아이덴티티). 멱등
 	@command -v magick >/dev/null || { echo "ImageMagick(magick) 필요"; exit 1; }
 	bash scripts/logo/appicon.sh
-	cp frameworks/tauri/icons/icon.png /tmp/soksak-icon-master.png   # 1024 스냅샷 — tauri icon 이 icon.png 를 512 로 덮으므로 보존
-	$(PNPM) tauri icon /tmp/soksak-icon-master.png --output frameworks/tauri/icons
-	magick /tmp/soksak-icon-master.png -fill '#2ec07a' -colorize 42% /tmp/soksak-icon-dev.png
-	$(PNPM) tauri icon /tmp/soksak-icon-dev.png --output frameworks/tauri/icons-dev
-	magick /tmp/soksak-icon-master.png -fill '#ff8c1a' -colorize 45% /tmp/soksak-icon-debug.png
-	$(PNPM) tauri icon /tmp/soksak-icon-debug.png --output frameworks/tauri/icons-debug
-	cp /tmp/soksak-icon-master.png frameworks/tauri/icons/icon.png   # 마스터 1024 복원(커밋되는 단일 원본)
-	@rm -f /tmp/soksak-icon-master.png /tmp/soksak-icon-dev.png /tmp/soksak-icon-debug.png
+	cp frameworks/tauri/icons/icon.png <local-evidence>/soksak-icon-master.png   # 1024 스냅샷 — tauri icon 이 icon.png 를 512 로 덮으므로 보존
+	$(PNPM) tauri icon <local-evidence>/soksak-icon-master.png --output frameworks/tauri/icons
+	magick <local-evidence>/soksak-icon-master.png -fill '#2ec07a' -colorize 42% <local-evidence>/soksak-icon-dev.png
+	$(PNPM) tauri icon <local-evidence>/soksak-icon-dev.png --output frameworks/tauri/icons-dev
+	magick <local-evidence>/soksak-icon-master.png -fill '#ff8c1a' -colorize 45% <local-evidence>/soksak-icon-debug.png
+	$(PNPM) tauri icon <local-evidence>/soksak-icon-debug.png --output frameworks/tauri/icons-debug
+	cp <local-evidence>/soksak-icon-master.png frameworks/tauri/icons/icon.png   # 마스터 1024 복원(커밋되는 단일 원본)
+	@rm -f <local-evidence>/soksak-icon-master.png <local-evidence>/soksak-icon-dev.png <local-evidence>/soksak-icon-debug.png
 	@echo "아이콘 재생성 완료: 마스터(1024 SVG벡터)+base+dev(녹색)+debug(주황)"
 
 # 개발 볼트 — 키체인 프롬프트 없이 뜬다.

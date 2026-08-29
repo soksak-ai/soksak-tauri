@@ -268,7 +268,7 @@ describe("plugin.dev.load — 홈 레인 게이트(dev identity 전용)", () => 
     invoke.mockImplementationOnce(async (cmd: unknown) =>
       cmd === "app_environment" ? { coreBuild: "debug" } : undefined,
     );
-    const r = (await execute("plugin.dev.load", { path: "/tmp/x" }, {})) as {
+    const r = (await execute("plugin.dev.load", { path: "<local-evidence>/x" }, {})) as {
       ok: boolean;
       code: string;
     };

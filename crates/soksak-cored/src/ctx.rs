@@ -246,14 +246,14 @@ mod tests {
     use super::*;
 
     fn dev() -> Identity {
-        Identity::new("/tmp/x-dev", "com.soksak.dev")
+        Identity::new("<local-evidence>/x-dev", "com.soksak.dev")
     }
 
     #[test]
     fn the_boot_state_derives_the_home_layout() {
         let ctx = Ctx::new(dev());
-        assert_eq!(ctx.data_dir(), Path::new("/tmp/x-dev/data"));
-        assert_eq!(ctx.db_path(), Path::new("/tmp/x-dev/data/soksak.db"));
+        assert_eq!(ctx.data_dir(), Path::new("<local-evidence>/x-dev/data"));
+        assert_eq!(ctx.db_path(), Path::new("<local-evidence>/x-dev/data/soksak.db"));
         assert_eq!(ctx.identity().cli_name(), "sok-dev");
     }
 
@@ -261,10 +261,10 @@ mod tests {
     /// 다른 파일을 열고, 그 차이는 오류가 아니라 "없음"으로 나타난다.
     #[test]
     fn a_relocated_store_is_told_not_guessed() {
-        let ctx = Ctx::new(dev()).with_data_dir("/tmp/e2e-iso");
-        assert_eq!(ctx.db_path(), Path::new("/tmp/e2e-iso/soksak.db"));
+        let ctx = Ctx::new(dev()).with_data_dir("<local-evidence>/e2e-iso");
+        assert_eq!(ctx.db_path(), Path::new("<local-evidence>/e2e-iso/soksak.db"));
         // 홈은 그대로다 — 데이터만 옮긴 것이지 정체성이 바뀐 게 아니다.
-        assert_eq!(ctx.home(), Path::new("/tmp/x-dev"));
+        assert_eq!(ctx.home(), Path::new("<local-evidence>/x-dev"));
     }
 
     /// 사용자 홈은 정체성 홈과 다른 축이다 — 못 받았으면 없는 것이지 부모로 때우지 않는다.
@@ -275,7 +275,7 @@ mod tests {
         let told = Ctx::new(dev()).with_user_home("/u/max");
         assert_eq!(told.user_home(), Some(Path::new("/u/max")));
         // 정체성 홈은 그대로다 — 두 홈은 서로를 대신하지 않는다.
-        assert_eq!(told.home(), Path::new("/tmp/x-dev"));
+        assert_eq!(told.home(), Path::new("<local-evidence>/x-dev"));
         assert_ne!(told.user_home(), Some(told.home()));
     }
 
@@ -285,11 +285,11 @@ mod tests {
         let ctx = Ctx::new(dev());
         assert_eq!(
             ctx.identity().themes_dir(),
-            soksak_core::identity::themes_dir(Path::new("/tmp/x-dev"))
+            soksak_core::identity::themes_dir(Path::new("<local-evidence>/x-dev"))
         );
         assert_eq!(
             ctx.identity().plugins_dir(),
-            soksak_core::identity::plugins_dir(Path::new("/tmp/x-dev"))
+            soksak_core::identity::plugins_dir(Path::new("<local-evidence>/x-dev"))
         );
     }
 }

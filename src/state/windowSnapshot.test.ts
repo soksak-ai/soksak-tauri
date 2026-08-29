@@ -232,7 +232,7 @@ describe("B3 — cwd·lastActivity 영속 round-trip", () => {
                   title: "Terminal",
                   pluginId: "soksak-plugin-terminal-xterm",
                   view: "content",
-                  cwd: "/tmp/somewhere",
+                  cwd: "<local-evidence>/somewhere",
                   lastActivity: 1234567890,
                 },
                 { id: "v2", kind: "plugin", title: "B", pluginId: "soksak-plugin-browser-native", view: "content" },
@@ -247,7 +247,7 @@ describe("B3 — cwd·lastActivity 영속 round-trip", () => {
     const g = (back.spaces[0].layout as Extract<PaneNode, { type: "leaf" }>).value;
     const v1 = g.tabs.find((v) => v.id === "v1") as Extract<Tab, { kind: "plugin" }>;
     const v2 = g.tabs.find((v) => v.id === "v2") as Extract<Tab, { kind: "plugin" }>;
-    expect(v1.cwd).toBe("/tmp/somewhere");
+    expect(v1.cwd).toBe("<local-evidence>/somewhere");
     expect(v1.lastActivity).toBe(1234567890);
     expect(v2.cwd).toBeUndefined();
     expect(v2.lastActivity).toBeUndefined();
@@ -409,7 +409,7 @@ describe("projection 핀 영속(§4.5) — 스냅샷 round-trip", () => {
   it("serializeProject 에 projection 을 실으면 스냅샷에 남고 구 스냅샷은 필드 부재", async () => {
     const { serializeProject } = await import("./windowSnapshot");
     const tab = {
-      id: "t9", title: "P", root: "/tmp/p", sidebarOpen: true, rightOpen: false,
+      id: "t9", title: "P", root: "<local-evidence>/p", sidebarOpen: true, rightOpen: false,
       rightView: null,
       leftLayout: { type: "leaf", value: { viewKeys: [], activeViewKey: "" } },
       activeSpaceId: "c1",

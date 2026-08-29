@@ -22,7 +22,7 @@ import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
 const SOCKET = requireSocket();
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "browser-pixels");
-// 픽스처 루트는 고정 경로 재사용(멱등 — /tmp 금지 규율). 없으면 만든다: 게이트가
+// 픽스처 루트는 고정 경로 재사용(멱등 — <local-evidence> 금지 규율). 없으면 만든다: 게이트가
 // 환경 준비를 사람에게 떠넘기지 않는다.
 fs.mkdirSync(FIXTURE_ROOT, { recursive: true });
 // 세 엔진 전부. 하나만 돌리면 나머지는 검증되지 않은 채 남는다 — 그게 이 게이트가 생긴 이유다.

@@ -34,7 +34,7 @@ export const MIN_FREE_GIB = 20;
 const WORKTREES = ".claude/worktrees";
 
 /** 격리 실행이 흘리는 자리 — 체크아웃 밖이라 워크트리 훑기로는 안 잡힌다. */
-const STRAY_TARGETS = ["/tmp/wf620-target"];
+const STRAY_TARGETS = ["<local-evidence>/wf620-target"];
 const ELECTRON_APP = "node_modules/electron/dist/Electron.app";
 const ELECTRON_FRAMEWORK = `${ELECTRON_APP}/Contents/Frameworks/Electron Framework.framework/Electron Framework`;
 

@@ -17,7 +17,7 @@ import {
 import { allGroups, allViews, useSessions, type Tab } from "../state/sessions";
 import { useProgramRegistry } from "../plugins/programRegistry";
 
-useSessions.getState().bootstrapFirstProject("/tmp/soksak-termstatus");
+useSessions.getState().bootstrapFirstProject("<local-evidence>/soksak-termstatus");
 const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;
 

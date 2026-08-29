@@ -349,7 +349,7 @@ Snapshot the entire data store to a single .db file via VACUUM INTO (absorbs WAL
 
 ```bash
 sok-dev data.backup
-sok-dev data.backup '{"path":"/tmp/soksak.db"}'
+sok-dev data.backup '{"path":"<local-evidence>/soksak.db"}'
 ```
 
 ## `data.canary`
@@ -630,7 +630,7 @@ Restore the entire data store from a backup .db file: validates, safely copies t
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-dev data.restore '{"path":"/tmp/soksak.db"}'
+sok-dev data.restore '{"path":"<local-evidence>/soksak.db"}'
 ```
 
 ## `data.search`
@@ -688,7 +688,7 @@ List direct children of a directory (same view as the file tree). Omit path to u
 
 ```bash
 sok-dev explorer.list
-sok-dev explorer.list '{"path":"/tmp"}'
+sok-dev explorer.list '{"path":"<local-evidence>"}'
 ```
 
 ## `framework.info`
@@ -1817,7 +1817,7 @@ Spawn (or warm-reattach) a headless daemon-backed PTY session under a caller-cho
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-dev pty.session.spawn '{"session":"agent-k3f9a2-1","cwd":"/tmp"}'
+sok-dev pty.session.spawn '{"session":"agent-k3f9a2-1","cwd":"<local-evidence>"}'
 ```
 
 ## `pty.session.write` (danger: inject)
@@ -2722,7 +2722,7 @@ Install a theme JSON file into ~/.soksak/themes (immediately usable if validatio
 **Errors**: INTERNAL
 
 ```bash
-sok-dev theme.install '{"path":"/tmp/dracula.json"}'
+sok-dev theme.install '{"path":"<local-evidence>/dracula.json"}'
 ```
 
 ## `theme.list`
@@ -3514,8 +3514,8 @@ Capture the window as a sequence of PNGs (dir/f0000.png ...) for use as a video 
 **Returns**: { dir, frames }
 
 ```bash
-sok-dev window.record '{"dir":"/tmp/rec"}'
-sok-dev window.record '{"dir":"/tmp/rec","frames":120,"intervalMs":33}'
+sok-dev window.record '{"dir":"<local-evidence>/rec"}'
+sok-dev window.record '{"dir":"<local-evidence>/rec","frames":120,"intervalMs":33}'
 ```
 
 ## `window.reload`
@@ -3597,10 +3597,10 @@ Capture the window contents to a PNG. Captures even when fully occluded by other
 
 ```bash
 sok-dev window.snapshot
-sok-dev window.snapshot '{"path":"/tmp/shot.png"}'
+sok-dev window.snapshot '{"path":"<local-evidence>/shot.png"}'
 sok-dev window.snapshot '{"rect":{"x":100,"y":80,"w":400,"h":300},"base64":true}'
-sok-dev window.snapshot '{"rect":{"x":100,"y":80,"w":400,"h":300},"path":"/tmp/crop.png"}'
-sok-dev window.snapshot '{"node":"win/main/proj/p1/chrome/tab/space/0","path":"/tmp/tab.png"}'
+sok-dev window.snapshot '{"rect":{"x":100,"y":80,"w":400,"h":300},"path":"<local-evidence>/crop.png"}'
+sok-dev window.snapshot '{"node":"win/main/proj/p1/chrome/tab/space/0","path":"<local-evidence>/tab.png"}'
 ```
 
 ## `window.themeScan`

@@ -14,7 +14,7 @@ import { registerCatalog } from "./catalog";
 import { execute } from "./registry";
 import { useSessions } from "../state/sessions";
 
-useSessions.getState().bootstrapFirstProject("/tmp/soksak-statusquery");
+useSessions.getState().bootstrapFirstProject("<local-evidence>/soksak-statusquery");
 registerCatalog();
 const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;

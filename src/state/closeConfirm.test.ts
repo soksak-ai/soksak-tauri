@@ -14,7 +14,7 @@ import { useCloseConfirm } from "./closeConfirm";
 import { allViews, useSessions } from "./sessions";
 import { useSettings } from "./settings";
 
-useSessions.getState().bootstrapFirstProject("/tmp/soksak-closeconfirm");
+useSessions.getState().bootstrapFirstProject("<local-evidence>/soksak-closeconfirm");
 const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;
 

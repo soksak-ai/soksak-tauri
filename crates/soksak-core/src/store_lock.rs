@@ -130,8 +130,8 @@ mod tests {
 
     #[test]
     fn the_lock_sits_next_to_the_store_not_on_it() {
-        let p = lock_path(std::path::Path::new("/tmp/x/data"));
-        assert_eq!(p, Path::new("/tmp/x/data/soksak.db.writelock"));
+        let p = lock_path(std::path::Path::new("<local-evidence>/x/data"));
+        assert_eq!(p, Path::new("<local-evidence>/x/data/soksak.db.writelock"));
         assert_ne!(p.file_name().unwrap(), crate::identity::DB_FILE);
     }
 }

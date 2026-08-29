@@ -9,15 +9,15 @@ describe("ptyObservation — OSC 7 cwd", () => {
   it("OSC 7 file URI 를 cwd 로 디코드", () => {
     const cwds: string[] = [];
     const p = createPtyObservationParser({ onCwd: (c) => cwds.push(c) });
-    p.write("\x1b]7;file:///tmp/x\x07");
-    expect(cwds).toEqual(["/tmp/x"]);
+    p.write("\x1b]7;file://<local-evidence>/x\x07");
+    expect(cwds).toEqual(["<local-evidence>/x"]);
   });
 
   it("percent-encoded·비ASCII 경로 왕복 보존", () => {
     const cwds: string[] = [];
     const p = createPtyObservationParser({ onCwd: (c) => cwds.push(c) });
-    p.write(`\x1b]7;file://host${encodeURI("/tmp/my project/héllo")}\x07`);
-    expect(cwds).toEqual(["/tmp/my project/héllo"]);
+    p.write(`\x1b]7;file://host${encodeURI("<local-evidence>/my project/héllo")}\x07`);
+    expect(cwds).toEqual(["<local-evidence>/my project/héllo"]);
   });
 
   it("같은 cwd 반복은 통지 안 함(변경 시에만)", () => {
@@ -32,8 +32,8 @@ describe("ptyObservation — OSC 7 cwd", () => {
   it("getCwd 스냅샷 노출", () => {
     const p = createPtyObservationParser({});
     expect(p.getCwd()).toBeUndefined();
-    p.write("\x1b]7;file:///tmp/z\x07");
-    expect(p.getCwd()).toBe("/tmp/z");
+    p.write("\x1b]7;file://<local-evidence>/z\x07");
+    expect(p.getCwd()).toBe("<local-evidence>/z");
   });
 });
 
