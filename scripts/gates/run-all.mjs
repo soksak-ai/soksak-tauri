@@ -23,6 +23,7 @@ export const REPO_ROOT = resolve(HERE, "../..");
 export const LOCAL = new Map([
   ["baseline-gate.mjs", []],
   ["build-output-path.mjs", []],
+  ["cargo-path-boundary.mjs", []],
   ["command-ownership.mjs", []],
   ["command-reference-whole-surface.mjs", []],
   ["c2-transparency-scan.mjs", ["--plugins", process.env.SOKSAK_PLUGINS || `${process.env.HOME}/.soksak-dev/plugins`]],
