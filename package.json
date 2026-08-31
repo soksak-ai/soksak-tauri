@@ -14,6 +14,7 @@
     "build:tauri": "pnpm stage:cored && pnpm run build:platform && tsc && SOKSAK_FRAMEWORK=tauri vite build",
     "build:electron": "pnpm run build:platform && tsc && SOKSAK_FRAMEWORK=electron vite build",
     "check:framework-artifacts": "node scripts/gates/framework-artifact-isolation.mjs",
+    "check:product-docs": "node --test scripts/docs/self-description-strategy.test.mjs",
     "preview": "node scripts/framework-required.mjs preview",
     "preview:tauri": "SOKSAK_FRAMEWORK=tauri vite preview",
     "preview:electron": "SOKSAK_FRAMEWORK=electron vite preview",

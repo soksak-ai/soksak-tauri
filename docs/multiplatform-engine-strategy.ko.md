@@ -17,7 +17,7 @@ C4 재해석(2026-07-08 합의): 모바일은 저수준 API를 쓰지 않는 패
 
 ## 2. 조사 방법과 스냅샷 주의
 
-2026-07-08, 병렬 리서치 에이전트 20개 + 결론을 뒤집을 수 있는 핵심 주장별 적대적 검증(1차 소스 반박 시도). verdict 분포: confirmed 7 / partially-true 4 / refuted 1. 이 문서의 프레임워크 사실은 전부 **2026-07-08 스냅샷**이다 — §10의 재평가 트리거 없이 이 스냅샷을 미래 사실로 인용하지 않는다.
+2026-07-08, 이 문서는 제품 결정과 그 결정을 지지하는 측정값을 기록한다. 문서의 프레임워크 사실은 모두 **2026-07-08 스냅샷**이며, 결정을 변경하기 전 §10의 명시된 조건으로 재평가한다.
 
 ## 3. 검증된 지형
 
@@ -32,7 +32,7 @@ C4 재해석(2026-07-08 합의): 모바일은 저수준 API를 쓰지 않는 패
 | Verso | **2025-10-08 리포지토리 아카이브(사망)**. `tauri-runtime-verso` 릴리스 0개, 2025-10-03 이후 무활동, GitLab 이주설도 반박됨. 단 Servo 본체는 `servo` crate 0.1.0을 2026-04-13 출시(임베더블 엔진 + LTS) — 셸이 아닌 엔진-as-라이브러리 신호 | 탈락 |
 | Electron | Rust가 napi/사이드카로 강등 | C1 탈락 |
 
-벤치마크 각주(Elanis 저장소, 2026-07-05 재생성): Tauri Win x64 빌드 ≈3MB. Tauri Linux CI 시동 30.3s는 미규명 이상치(같은 WebKitGTK의 Wails는 245ms — 실기기 재측정 전 인용 금지). Win 빈-앱 메모리 Tauri ≈313MB > Electron ≈275MB(CI 한정) — "Tauri가 Windows에서 가볍다"를 셀링 포인트로 쓰지 않는다.
+벤치마크 값은 릴리스 기준이 아니다. 플랫폼 결정은 소유 게이트가 기록한 재현 가능한 로컬 측정으로만 변경하며, 재현할 수 없는 CI 값은 변경 근거로 사용하지 않는다.
 
 ## 4. 구조적 사실 (프레임워크 무관)
 
@@ -45,7 +45,7 @@ C4 재해석(2026-07-08 합의): 모바일은 저수준 API를 쓰지 않는 패
 - **D1 — Tauri v2 잔류.** 근거: Rust ~12k LOC 중 8–9k가 프레임워크 무관, 프론트 36.4k LOC는 invoke+events 경계 뒤에 있다. 이탈 = 81-커맨드 IPC 재배관 + 동일한 네이티브 포팅 비용. 생존 대안이 없다(§3).
 - **D2 — Windows/Linux의 브라우저 엔진은 CEF 사이드카 온리.** macOS의 layer-inversion / hole-punch / hitTest-swizzle 서브시스템(webview.rs)은 **이식하지 않는다 — 대체만 한다.** Windows WebView2에는 hitTest 심이 없고(CompositionController + DirectComposition 트리 필요), wry의 Linux child webview는 X11 전용(Wayland 불가, 검증됨)이다. 이 결정으로 `unstable` 피처 노출과 Wayland 리스크가 macOS 한정으로 축소된다.
 - **D3 — 병치, 교체 금지.** OS 웹뷰 = 앱 UI 셸 / CEF = 콘텐츠 표면. UI 셸의 CEF 전면 교체를 기본 계획으로 삼지 않는다: Windows OS 웹뷰는 이미 Chromium이라 이득이 없고, 모바일 진출 시 앱 UI의 엔진 매트릭스가 갈라지며, Tauri IPC·플러그인 주입을 상실한다. 앱 UI를 OS 웹뷰(WebKit 교집합)에 두는 것 자체가 모바일 대비 규율이다.
-- **D4 — tauri 7-crate 포크(WKWebView 릭 픽스)는 per-target 게이트.** 릭은 macOS 전용이다. Win/Linux 빌드는 업스트림을 추적해 포크 리스크를 0으로 만든다. 업스트림 릭 픽스 병합 감시 canary를 리베이스 전에 둔다(이중 해제 위험).
+- **D4 — macOS WKWebView 릭 수정 집합은 per-target 게이트다.** 릭은 macOS 전용이다. Win/Linux 빌드는 수정하지 않은 프레임워크 경로를 사용한다. 프레임워크 revision 변경 전 canary가 고정 수정 집합을 검증해야 한다(이중 해제 위험).
 - **D5 — Linux 승격(§7)은 스파이크 실측 후에만 발동한다.** 사전 채택 금지.
 
 ## 6. 표면 승격 규칙 — 플러그인 표면의 엔진 라우팅
@@ -104,7 +104,7 @@ compositing 축 실증(2026-07-08): offscreen 호스팅 모드(공유 텍스처 
 |---|---|---|---|
 | 1 | `add_child` unstable 게이트, 안정화 약속 없음(2.12에 breaking fix #15625) | High | D2로 노출을 macOS 한정으로 축소; Tauri 마이너 핀; A13 인터페이스 유지로 macOS도 후일 CEF 이관 가능 |
 | 2 | Tauri v3 하부 재작업(tao→winit, GTK4, 1st-party CEF/Servo 런타임 프리뷰; 마일스톤 ~27%) | Med-High | v3 조기 채택 금지; 1st-party CEF 런타임은 사이드카 투자와의 수렴 기회로 취급 |
-| 3 | 포크 유지 + 업스트림 릭 픽스 시 이중 해제 위험 | Med | D4 per-target 게이트; `with_webview_balanced` 폴백 보존; 리베이스 전 changelog canary |
+| 3 | 수정 집합 유지 + 프레임워크 코드 변경 시 이중 해제 위험 | Med | D4 per-target 게이트; `with_webview_balanced` 폴백 보존; 프레임워크 revision 변경 전 canary 실행 |
 | 4 | Linux webkitgtk 그래픽 결함(메인 DOM 웹뷰) | Med | GPU-heavy는 CEF 패널로 격리; DMABUF/NVIDIA env-var 폴백 출하; Linux xterm은 DOM 렌더러 검토; CI 30s 수치는 실기기 재측정 전 판단 금지 |
 | 5 | Wayland: wry child webview X11 전용 | High→Low | D2가 Linux에서 wry child 사용 자체를 제거; 스파이크에서 CEF Wayland/Ozone 확인; XWayland는 최후 폴백 |
 | 6 | CEF Win/Linux 표면 작업 미실증(HWND 펌프, X11 reparenting, helper 프로세스군, 엔진 페이로드 서명) | High | §9 스파이크로 타임박스; 서명/노터라이즈를 같은 마일스톤에서 해소 |
@@ -125,9 +125,9 @@ compositing 축 실증(2026-07-08): offscreen 호스팅 모드(공유 텍스처 
 - **Electrobun**: Rust main-process가 태그 릴리스에 도달하고 안정화되면 재평가(기준: 2분기 후). 그 전에는 후보가 아니다.
 - **Tauri v3**: 1st-party CEF/Servo 런타임 프리뷰 출시 시 D2 사이드카와의 수렴 검토. `add_child` 제거 신호가 나오면 즉시 재평가.
 - **servo crate**: LTS 라인 성숙도만 릴리스 노트 수준으로 추적. Verso 계보는 추적하지 않는다(사망 확인).
-- **업스트림 WKWebView 릭 픽스** 병합 → D4 canary 발동, 포크 해체 검토.
+- **프레임워크 WKWebView 릭 수정** 변경 → D4 canary를 실행하고 로컬 수정 집합 제거 가능성을 검토한다.
 
-## 참고
+## 결정 입력
 
-- 관련 문서: [ARCHITECTURE.md](ARCHITECTURE.md) (A13 엔진 중립·A14 사이드카), [SIDECARS.md](SIDECARS.md), [PERFORMANCE.md](PERFORMANCE.md), [webview-leak-fix.md](webview-leak-fix.md)
-- 근거 1차 소스(조사 시점 검증): tauri 2.11.5 릴리스·docs.rs unstable 게이트 표기, wailsapp/wails 릴리스 API(alpha2.116), webui-dev/webui 릴리스 API(스테이블 0회), blackboardsh/electrobun main 커밋(2026-07-04 "rust main process")·npm dist-tags, versotile-org/verso 아카이브 배너(2025-10-08), servo.org 블로그(0.1.0, 2026-04-13), Elanis/web-to-desktop-framework-comparison(2026-07-05 재생성)
+- 관련 제품 문서: [ARCHITECTURE.md](ARCHITECTURE.md) (A13 엔진 중립·A14 사이드카), [SIDECARS.md](SIDECARS.md), [PERFORMANCE.md](PERFORMANCE.md), [webview-leak-fix.md](webview-leak-fix.md)
+- 결정 증거는 소유 게이트 출력에 저장하며 측정값, 플랫폼, 빌드 정체성, 관측 시각을 포함해야 한다.

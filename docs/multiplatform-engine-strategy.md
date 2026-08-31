@@ -17,7 +17,7 @@ C4 reinterpretation (agreed 2026-07-08): mobile weight is lowered on the heurist
 
 ## 2. Method and snapshot caveat
 
-2026-07-08: 20 parallel research agents plus adversarial verification of each result's most load-bearing claim (attempt to refute against primary sources). Verdict spread: confirmed 7 / partially-true 4 / refuted 1. Every framework fact in this document is a **2026-07-08 snapshot** — do not cite this snapshot as a future fact without the re-evaluation triggers in §10.
+2026-07-08: this document records the product decision and the measurements that support it. Every framework fact in this document is a **2026-07-08 snapshot** — re-evaluate it through the explicit triggers in §10 before changing the decision.
 
 ## 3. Verified landscape
 
@@ -32,7 +32,7 @@ C4 reinterpretation (agreed 2026-07-08): mobile weight is lowered on the heurist
 | Verso | **Repository archived 2025-10-08 (dead)**. `tauri-runtime-verso` has zero releases, no activity since 2025-10-03, GitLab-migration rumor refuted. But Servo itself shipped the `servo` crate 0.1.0 on 2026-04-13 (embeddable engine + LTS) — an engine-as-library signal, not a shell | Eliminated |
 | Electron | Rust demoted to napi/sidecar | Fails C1 |
 
-Benchmark footnote (Elanis repo, regenerated 2026-07-05): Tauri Win x64 build ≈3MB. The Tauri Linux CI startup of ≈30.3s is an unexplained anomaly (Wails on the same WebKitGTK posts 245ms — do not cite before real-hardware re-measurement). Win empty-app memory Tauri ≈313MB > Electron ≈275MB (CI only) — do not sell "Tauri is lighter on Windows."
+Benchmark values are not release criteria. Platform decisions require a reproducible local measurement recorded by the owning gate; an unrepeatable CI value cannot justify a change.
 
 ## 4. Structural facts (framework-independent)
 
@@ -45,7 +45,7 @@ Benchmark footnote (Elanis repo, regenerated 2026-07-05): Tauri Win x64 build �
 - **D1 — Stay on Tauri v2.** Rationale: of ~12k Rust LOC, 8–9k is framework-independent; the 36.4k-LOC frontend sits behind an invoke+events boundary. Leaving = re-plumbing 81 commands over IPC on top of the same native porting cost. No surviving alternative (§3).
 - **D2 — The browser engine on Windows/Linux is CEF-sidecar-only.** The macOS layer-inversion / hole-punch / hitTest-swizzle subsystem (webview.rs) is **not ported — only replaced.** Windows WebView2 has no hitTest seam (needs CompositionController + a DirectComposition tree); wry's Linux child webview is X11-only (no Wayland, verified). This decision confines `unstable`-feature exposure and the Wayland risk to macOS.
 - **D3 — Juxtaposition, no wholesale replacement.** OS webview = the app UI shell / CEF = content surfaces. Replacing the whole UI shell with CEF is not the default plan: Windows OS webview is already Chromium (no gain), going mobile splits the app UI's engine matrix, and it loses Tauri IPC + plugin injection. Keeping the app UI on the OS webview (WebKit intersection) is itself mobile-readiness discipline.
-- **D4 — The 7-crate tauri fork (WKWebView leak fix) is per-target gated.** The leak is macOS-only. Win/Linux builds track upstream so fork risk is zero. Add a canary that watches for the upstream leak fix before each rebase (double-free hazard).
+- **D4 — The macOS WKWebView leak patch set is per-target gated.** The leak is macOS-only. Win/Linux builds use the unmodified framework path. A canary must verify the pinned patch set before each framework revision change (double-free hazard).
 - **D5 — The Linux promotion (§7) fires only after a spike measurement.** No pre-adoption.
 
 ## 6. Surface promotion rule — per-surface engine routing
@@ -104,7 +104,7 @@ Bonus: once the UI is CEF too, the hole-punch problem vanishes on Linux — comp
 |---|---|---|---|
 | 1 | `add_child` unstable-gated, no stabilization commitment (2.12 has breaking fix #15625) | High | D2 confines exposure to macOS; pin Tauri minor; keep the A13 interface so macOS can also move to CEF later |
 | 2 | Tauri v3 rework beneath you (tao→winit, GTK4, 1st-party CEF/Servo runtime previews; milestone ~27%) | Med-High | Do not early-adopt v3; treat the 1st-party CEF runtime as a convergence opportunity with the sidecar investment |
-| 3 | Fork maintenance + double-free hazard when upstream fixes the leak | Med | D4 per-target gate; keep the `with_webview_balanced` fallback; changelog canary before rebase |
+| 3 | Patch-set maintenance + double-free hazard when framework code changes | Med | D4 per-target gate; keep the `with_webview_balanced` fallback; run the canary before each framework revision change |
 | 4 | Linux webkitgtk graphics failures (main DOM webview) | Med | Isolate GPU-heavy content to CEF panels; ship DMABUF/NVIDIA env-var fallbacks; consider DOM renderer for Linux xterm; do not judge the 30s CI number before real-hardware re-measurement |
 | 5 | Wayland: wry child webview is X11-only | High→Low | D2 removes wry-child use on Linux entirely; verify CEF Wayland/Ozone in the spike; XWayland is the last-resort fallback |
 | 6 | CEF Win/Linux surface work unproven (HWND pump, X11 reparenting, helper-process family, engine-payload signing) | High | Time-box via the §9 spike; resolve signing/notarization in the same milestone |
@@ -125,9 +125,9 @@ Bonus: once the UI is CEF too, the hole-punch problem vanishes on Linux — comp
 - **Electrobun**: re-evaluate once the Rust main-process reaches a tagged release and stabilizes (target: two quarters out). Not a candidate before then.
 - **Tauri v3**: review convergence with the D2 sidecar when a 1st-party CEF/Servo runtime preview ships. Re-evaluate immediately if a signal to remove `add_child` appears.
 - **servo crate**: track only the LTS line's maturity at release-note level. Do not track the Verso lineage (confirmed dead).
-- **Upstream WKWebView leak fix** merged → fire the D4 canary, review dismantling the fork.
+- **The framework WKWebView leak fix** changes → run the D4 canary and review whether the local patch set can be removed.
 
-## References
+## Decision inputs
 
-- Related docs: [ARCHITECTURE.md](ARCHITECTURE.md) (A13 engine neutrality, A14 sidecar), [SIDECARS.md](SIDECARS.md), [PERFORMANCE.md](PERFORMANCE.md), [webview-leak-fix.md](webview-leak-fix.md)
-- Primary sources (verified at research time): tauri 2.11.5 release + docs.rs unstable-gate marking, wailsapp/wails releases API (alpha2.116), webui-dev/webui releases API (zero stable), blackboardsh/electrobun main commits (2026-07-04 "rust main process") + npm dist-tags, versotile-org/verso archive banner (2025-10-08), servo.org blog (0.1.0, 2026-04-13), Elanis/web-to-desktop-framework-comparison (regenerated 2026-07-05)
+- Related product documents: [ARCHITECTURE.md](ARCHITECTURE.md) (A13 engine neutrality, A14 sidecar), [SIDECARS.md](SIDECARS.md), [PERFORMANCE.md](PERFORMANCE.md), [webview-leak-fix.md](webview-leak-fix.md)
+- Decision evidence is kept in the owning gate output and must include the measured value, platform, build identity, and observation time.
