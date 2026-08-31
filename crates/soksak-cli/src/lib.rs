@@ -1187,27 +1187,19 @@ fn skill_frontmatter(skill_name: &str, env: &str, directives_fm: Option<&str>) -
     format!("---\nname: {skill_name}\ndescription: {SKILL_DESCRIPTION_DEFAULT}{env_tag}\n---\n")
 }
 
-// 이 환경의 호출 방법 — 생성 시점의 CLI 실경로를 핀한다(미설치 개발 환경에서도 즉시 동작).
-// 재작성 때마다 갱신되므로 이사·리빌드에 썩지 않는다.
+// 이 환경의 호출 방법. CLI 이름은 PATH 로 발견하고, identity 가 home 과 socket 을 해석한다.
+// 생성한 머신의 실행물 경로를 기록하면 파일을 옮긴 뒤에도 옛 checkout 을 실행하게 된다.
 fn env_pin_block(env: &str) -> String {
     let alias = if env == "app" {
         "sok".to_string()
     } else {
         format!("sok-{env}")
     };
-    let exe = std::env::current_exe()
-        .ok()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "sok".into());
-    let sock = socket_path_for_env(env)
-        .map(|p| p.display().to_string())
-        .unwrap_or_default();
-    let pinned = exe; // 이름별 실물 바이너리 — 환경은 컴파일 고정이라 프리픽스가 없다.
     format!(
-        "## This environment (pinned at generation)\n\n\
-         - Environment: **{env}** — socket `{sock}`\n\
-         - Invoke: `{alias}` if it is on PATH; otherwise the pinned CLI: `{pinned}`\n\
-         - Every `sok …` example below means this binary. Do not substitute another environment's binary — each environment has its own app, socket, and plugin set.\n\n"
+        "## This environment\n\n\
+         - Environment: **{env}**\n\
+         - Invoke: `{alias}` from PATH. If it is unavailable, regenerate this skill with the intended {env} CLI before continuing.\n\
+         - The CLI resolves the {env} identity home and control socket. Do not substitute another identity's binary.\n\n"
     )
 }
 

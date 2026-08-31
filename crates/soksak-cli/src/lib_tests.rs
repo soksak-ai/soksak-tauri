@@ -321,6 +321,8 @@ fn skill_doc_has_frontmatter_and_map_no_catalog() {
     );
     assert!(doc.contains("description:"), "description 트리거 누락");
     assert!(doc.contains("Environment: **dev**"), "환경 핀 블록 누락");
+    assert!(doc.contains("Invoke: `sok-dev` from PATH"), "identity CLI 발견 규칙 누락");
+    assert!(!doc.contains("pinned CLI"), "생성 머신의 실행물 경로가 스킬에 남음");
     assert!(
         doc.contains("- panel (2): merge, split"),
         "도메인 지도 주입 누락"
