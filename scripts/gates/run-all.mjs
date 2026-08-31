@@ -29,6 +29,7 @@ export const LOCAL = new Map([
   ["core-decoupling-scan.mjs", []],
   ["core-git-scan.mjs", []],
   ["core-terminal-scan.mjs", []],
+  ["current-record-provenance.mjs", []],
   ["data-change-notify-scan.mjs", []],
   ["event-name-scan.mjs", []],
   ["font-stack-scan.mjs", []],
