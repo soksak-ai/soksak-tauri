@@ -22,7 +22,7 @@ import { useDraggableModal } from "./modalDrag";
 // 헤더(⠿ 그립·✕), 테마 그리드(스와치+라벨, 활성=액센트 보더), 행 레이아웃
 // (라벨 130px + inset 컨트롤), 섹션 캡션, − n + 스테퍼.
 
-// 테마 스와치: bg 배경 + side 사이드바 막대 + acc 점(레퍼런스 마크업).
+// 테마 스와치: bg 배경 + side 사이드바 막대 + acc 점.
 function ThemeSwatch({ bg, side, acc }: { bg: string; side: string; acc: string }) {
   return (
     <span className="th-swatch" style={{ background: bg }}>

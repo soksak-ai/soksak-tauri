@@ -145,19 +145,18 @@ git/clipboard/ai.session) and removes the violators.
 > A name states what we provide. The name of what we consume lives inside the import
 > boundary only.
 
-Test: did we write it? do we fork and continue developing it? If no, it is a consumed
-carrier, and its name (e.g. `cef`) may appear only in the one crate that imports it —
-`Cargo.toml` dependency line, `use` statements, and attribution/provenance docs. Everything
+Test: did we write and maintain it? If no, it is a consumed
+library, and its name (e.g. `cef`) may appear only in the one crate that imports it —
+the `Cargo.toml` dependency line, `use` statements, and required license notices. Everything
 we mint — files, commands, env, types, docs terminology, UI — names the observable entity
 (the Chromium engine), not the carrier.
 
-- CEF's own framework binary is literally named `Chromium Embedded Framework.framework`:
-  the upstream project itself declares the substance to be Chromium and itself the carrier.
-  We do not name cargo after the truck.
+- CEF's framework binary is named `Chromium Embedded Framework.framework`; the observable
+  engine is Chromium. We name product surfaces after the observable engine, not its carrier.
 - This is consistent with the engine-name rule for plugins (`editor-codemirror`):
   CodeMirror *is* the observable engine there, not a carrier.
-- Naming ≠ dependency reference. Hiding the dependency would be dishonest; the reference
-  (dep line, use, license attribution) is mandatory — as with tokio or objc2.
+- Naming is separate from dependency declaration. The manifest, imports, and required license
+  attribution remain explicit; product commands and UI use the observable engine name.
 
 The name pair for the two browser engines encodes the *provisioning axis*, not just an
 engine name: `Webview` = OS-provided (identity varies per OS, cannot pin an engine name)

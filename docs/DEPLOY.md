@@ -103,8 +103,8 @@ apart. There are two roles, split by whether a unit is present in a home:
   are never edited.
 - **`~/soksak/` is the workspace for repos not present in a home.**
   `~/soksak/core` is the core monorepo — the single canonical checkout. `~/soksak/<name>`
-  holds the rest of the derived development: third-party forks the project modifies
-  (`~/soksak/vt100-rust`, `~/soksak/wezterm`, …) and the sources of non-home units
+  holds the other component repositories used during active development
+  (`~/soksak/<component>`), including sources of non-home units
   (spec, contracts) when they are under active work. One checkout per repo; extra
   work happens in a `git worktree`, not a second clone. A repo not under active
   development is not kept here — the remote is canonical and it is re-cloned when

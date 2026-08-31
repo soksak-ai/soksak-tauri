@@ -23,3 +23,20 @@ test("strategy documents describe product decisions without external provenance"
     assert.equal(pattern.test(korean), false, `Korean retains external provenance: ${pattern}`);
   }
 });
+
+test("product sources describe owned surfaces directly", () => {
+  const sources = [
+    "docs/DEPLOY.md",
+    "docs/NAMING.md",
+    "crates/soksak-core/src/themes.rs",
+    "frameworks/tauri/src/fs.rs",
+    "src/components/SettingsModal.tsx",
+  ];
+  const forbidden = [/third-party forks/i, /upstream project/i, /외부에서 만들어져/, /레퍼런스 마크업/];
+  for (const relative of sources) {
+    const body = readFileSync(join(root, relative), "utf8");
+    for (const pattern of forbidden) {
+      assert.equal(pattern.test(body), false, `${relative} retains external provenance: ${pattern}`);
+    }
+  }
+});
