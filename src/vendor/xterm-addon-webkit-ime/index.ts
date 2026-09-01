@@ -20,17 +20,14 @@
 // to xterm. We also block keyCode 229 from leaking partial jamo, and shouldSkip()
 // filters any jamo that still leaks through terminal.onData mid-composition.
 //
-// WebKit bug: https://bugs.webkit.org/show_bug.cgi?id=274700
-//
 // This file declares the minimal Xterm 6 surface this app consumes. The structural
 // interface keeps private Xterm internals out of the addon.
 //
 // ── Four WKWebView composition boundary guards ──────────────────────────────
 //
-// Verified on a real device: Tauri 2 WKWebView, macOS, Korean 2-set Dubeolsik,
-// xterm 6.0. WKWebView's event order is non-intuitive — for each composing
-// keystroke the engine fires beforeinput -> input -> terminal.onData BEFORE the
-// keydown(229) marker. Captured ground truth:
+// The supported WKWebView configuration is macOS Korean 2-set Dubeolsik with
+// Xterm 6. For each composing keystroke the engine fires beforeinput -> input ->
+// terminal.onData BEFORE the keydown(229) marker. The adapter handles this order:
 //
 //   beforeinput(insertText "대")   ← addon can record echo expectation here
 //   onData("대")                   ← xterm textarea poll echoes the char

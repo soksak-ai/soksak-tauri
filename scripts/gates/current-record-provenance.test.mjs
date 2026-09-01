@@ -36,4 +36,10 @@ describe("current record provenance", () => {
   it("the tracked current record is self-contained", () => {
     expect(scanCurrentRecord()).toEqual([]);
   });
+
+  it("does not describe the IME adapter as an external project", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const text = await readFile(new URL("../../src/vendor/xterm-addon-webkit-ime/VENDORED.md", import.meta.url), "utf8");
+    expect(text).not.toMatch(/yejune|github\.com\/yejune|Vendored|벤더링|외부/iu);
+  });
 });
